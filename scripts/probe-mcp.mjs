@@ -64,7 +64,7 @@ try {
   if (stateResult.structuredContent?.storage !== "empty") {
     throw new Error("A fresh Cowart project should report empty storage.");
   }
-  if (!String(stateResult.structuredContent?.canvasDir || "").endsWith("/canvas")) {
+  if (path.basename(String(stateResult.structuredContent?.canvasDir || "")) !== "canvas") {
     throw new Error("Cowart canvas state did not report a project-local canvas directory.");
   }
 
