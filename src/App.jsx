@@ -1858,7 +1858,7 @@ function CowartAnnotationEditToolbarButton({ imageShapeId }) {
   return (
     <TldrawUiToolbarButton
       aria-label={title}
-      className="cowart-annotation-edit-toolbar-button"
+      className="cowart-toolbar-action cowart-annotation-edit-toolbar-button"
       data-status={status}
       data-testid="tool.cowart-annotation-edit"
       disabled={status === 'sending'}
@@ -1870,7 +1870,7 @@ function CowartAnnotationEditToolbarButton({ imageShapeId }) {
         icon={status === 'sent' ? 'check' : status === 'error' ? 'warning-triangle' : 'tool-highlight'}
         small
       />
-      <span className="cowart-annotation-edit-toolbar-label">{ANNOTATION_EDIT_TOOL_LABEL}</span>
+      <span className="cowart-toolbar-action__label">{ANNOTATION_EDIT_TOOL_LABEL}</span>
     </TldrawUiToolbarButton>
   )
 }
@@ -1915,7 +1915,7 @@ function CowartCopyAnnotatedImageButton({ imageShapeId }) {
   return (
     <TldrawUiToolbarButton
       aria-label={title}
-      className="cowart-copy-annotated-image-toolbar-button"
+      className="cowart-toolbar-action cowart-copy-annotated-image-toolbar-button"
       data-status={status}
       data-testid="tool.cowart-copy-annotated-image"
       disabled={status === 'processing'}
@@ -1924,7 +1924,7 @@ function CowartCopyAnnotatedImageButton({ imageShapeId }) {
       type="icon"
     >
       <TldrawUiButtonIcon icon={iconName} small />
-      <span className="cowart-copy-annotated-image-toolbar-label">{COPY_ANNOTATED_IMAGE_LABEL}</span>
+      <span className="cowart-toolbar-action__label">{COPY_ANNOTATED_IMAGE_LABEL}</span>
     </TldrawUiToolbarButton>
   )
 }
