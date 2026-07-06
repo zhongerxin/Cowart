@@ -171,18 +171,21 @@ body {
   opacity: 0.65;
 }
 
-.cowart-annotation-edit-toolbar-button {
+/* Shared visual rules for both image-toolbar action buttons
+   (按标注修改 + 复制标注图). Keep button-specific className for
+   hooks/tests; status color overrides live in button-specific rules below. */
+.cowart-toolbar-action {
   width: auto;
   min-width: 104px;
   padding: 0 12px;
   gap: 6px;
 }
 
-.cowart-annotation-edit-toolbar-button::after {
+.cowart-toolbar-action::after {
   inset: 4px;
 }
 
-.cowart-annotation-edit-toolbar-label {
+.cowart-toolbar-action__label {
   position: relative;
   z-index: 1;
   flex: 0 0 auto;
@@ -199,6 +202,18 @@ body {
 }
 
 .cowart-annotation-edit-toolbar-button[data-status="error"] {
+  color: #c2410c;
+}
+
+.cowart-copy-annotated-image-toolbar-button[data-status="processing"] {
+  opacity: 0.65;
+}
+
+.cowart-copy-annotated-image-toolbar-button[data-status="success"] {
+  color: #1f8f4d;
+}
+
+.cowart-copy-annotated-image-toolbar-button[data-status="error"] {
   color: #c2410c;
 }
 

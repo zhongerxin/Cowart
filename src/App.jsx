@@ -1098,6 +1098,55 @@ class CowartFrameShapeUtil extends FrameShapeUtil {
 
 const cowartShapeUtils = [CowartFrameShapeUtil]
 
+async function renderCowartAnnotatedImage(editor, imageShapeId, format) {
+  const shapeIds = collectAnnotationEditShapeIds(editor, imageShapeId)
+  const rawBounds = editor.getShapesPageBounds(shapeIds)
+  if (!rawBounds) throw new Error('无法计算导出范围。')
+
+  const exportBounds = expandBox(rawBounds, ANNOTATION_EDIT_EXPORT_PADDING)
+  // pixelRatio=2 matches tldraw's default for bitmap exports, preserving original clarity
+  const exportPixelRatio = 2
+  const darkMode = editor.user.getUserPreferences().colorScheme === 'dark'
+
+  if (format === 'svg') {
+    const result = await editor.getSvgString(shapeIds, {
+      bounds: exportBounds,
+      background: true,
+      darkMode,
+      padding: 0
+    })
+    if (!result?.svg) throw new Error('SVG 生成失败。')
+    return { blob: new Blob([result.svg], { type: 'image/svg+xml' }), mimeType: 'image/svg+xml' }
+  }
+
+  const exportResult = await editor.toImageDataUrl(shapeIds, {
+    bounds: exportBounds,
+    background: true,
+    darkMode,
+    format: 'png',
+    padding: 0,
+    pixelRatio: exportPixelRatio
+  })
+
+  const response = await fetch(exportResult.url)
+  return { blob: await response.blob(), mimeType: 'image/png' }
+}
+
+async function copyCowartAnnotatedImage(editor, imageShapeId, format) {
+  const { blob, mimeType } = await renderCowartAnnotatedImage(editor, imageShapeId, format)
+  if (!navigator.clipboard?.write) throw new Error('当前浏览器不支持剪贴板写入。')
+  await navigator.clipboard.write([new ClipboardItem({ [mimeType]: blob })])
+  return { blob, mimeType }
+}
+
+function isSingleImageSelection(editor) {
+  const selectedIds = editor.getSelectedShapeIds()
+  if (selectedIds.length !== 1) return null
+  const shape = editor.getShape(selectedIds[0])
+  if (!shape || shape.type !== 'image') return null
+  return shape.id
+}
+
 const cowartUiOverrides = {
   translations: {
     en: {
@@ -1154,6 +1203,34 @@ const cowartUiOverrides = {
           cowartTool: 'annotation'
         }
       }
+    }
+  },
+  actions(editor, schema, helpers) {
+    const originalCopyAsPng = schema['copy-as-png']
+    const originalCopyAsSvg = schema['copy-as-svg']
+    if (!originalCopyAsPng && !originalCopyAsSvg) return schema
+
+    const wrapAnnotatedCopy = (format, original) => async (source) => {
+      const imageShapeId = isSingleImageSelection(editor)
+      if (!imageShapeId) {
+        return original ? original.onSelect(source) : undefined
+      }
+      try {
+        await copyCowartAnnotatedImage(editor, imageShapeId, format)
+      } catch (error) {
+        console.error(`[cowart] copy-as-${format} annotated fallback:`, error)
+        if (original) return original.onSelect(source)
+      }
+    }
+
+    return {
+      ...schema,
+      ...(originalCopyAsPng && {
+        'copy-as-png': { ...originalCopyAsPng, onSelect: wrapAnnotatedCopy('png', originalCopyAsPng) }
+      }),
+      ...(originalCopyAsSvg && {
+        'copy-as-svg': { ...originalCopyAsSvg, onSelect: wrapAnnotatedCopy('svg', originalCopyAsSvg) }
+      })
     }
   }
 }
@@ -1660,6 +1737,7 @@ function CowartImageToolbarContent() {
         onManipulatingStart={handleManipulatingStart}
       />
       {!isInCropTool && <CowartAnnotationEditToolbarButton imageShapeId={imageShapeId} />}
+      {!isInCropTool && <CowartCopyAnnotatedImageButton imageShapeId={imageShapeId} />}
     </>
   )
 }
@@ -1780,7 +1858,7 @@ function CowartAnnotationEditToolbarButton({ imageShapeId }) {
   return (
     <TldrawUiToolbarButton
       aria-label={title}
-      className="cowart-annotation-edit-toolbar-button"
+      className="cowart-toolbar-action cowart-annotation-edit-toolbar-button"
       data-status={status}
       data-testid="tool.cowart-annotation-edit"
       disabled={status === 'sending'}
@@ -1792,7 +1870,61 @@ function CowartAnnotationEditToolbarButton({ imageShapeId }) {
         icon={status === 'sent' ? 'check' : status === 'error' ? 'warning-triangle' : 'tool-highlight'}
         small
       />
-      <span className="cowart-annotation-edit-toolbar-label">{ANNOTATION_EDIT_TOOL_LABEL}</span>
+      <span className="cowart-toolbar-action__label">{ANNOTATION_EDIT_TOOL_LABEL}</span>
+    </TldrawUiToolbarButton>
+  )
+}
+
+const COPY_ANNOTATED_IMAGE_LABEL = '复制标注图'
+const COPY_ANNOTATED_IMAGE_RESET_MS = 2200
+
+function CowartCopyAnnotatedImageButton({ imageShapeId }) {
+  const editor = useEditor()
+  const [status, setStatus] = useState('idle')
+
+  useEffect(() => {
+    if (status === 'processing' || status === 'idle') return
+    const timer = window.setTimeout(() => setStatus('idle'), COPY_ANNOTATED_IMAGE_RESET_MS)
+    return () => window.clearTimeout(timer)
+  }, [status])
+
+  async function handleClick() {
+    if (status === 'processing') return
+
+    setStatus('processing')
+    try {
+      await copyCowartAnnotatedImage(editor, imageShapeId, 'png')
+      setStatus('success')
+    } catch (error) {
+      console.error(error)
+      setStatus('error')
+    }
+  }
+
+  const title =
+    status === 'processing'
+      ? '正在复制…'
+      : status === 'success'
+        ? '已复制到剪贴板'
+        : status === 'error'
+          ? '复制失败，请重试'
+          : COPY_ANNOTATED_IMAGE_LABEL
+
+  const iconName = status === 'success' ? 'check' : status === 'error' ? 'warning-triangle' : 'duplicate'
+
+  return (
+    <TldrawUiToolbarButton
+      aria-label={title}
+      className="cowart-toolbar-action cowart-copy-annotated-image-toolbar-button"
+      data-status={status}
+      data-testid="tool.cowart-copy-annotated-image"
+      disabled={status === 'processing'}
+      onClick={handleClick}
+      title={title}
+      type="icon"
+    >
+      <TldrawUiButtonIcon icon={iconName} small />
+      <span className="cowart-toolbar-action__label">{COPY_ANNOTATED_IMAGE_LABEL}</span>
     </TldrawUiToolbarButton>
   )
 }
