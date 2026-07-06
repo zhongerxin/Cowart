@@ -1104,7 +1104,8 @@ async function renderCowartAnnotatedImage(editor, imageShapeId, format) {
   if (!rawBounds) throw new Error('无法计算导出范围。')
 
   const exportBounds = expandBox(rawBounds, ANNOTATION_EDIT_EXPORT_PADDING)
-  const exportPixelRatio = Math.max(getAnnotationEditExportPixelRatio(exportBounds), 2)
+  // pixelRatio=2 matches tldraw's default for bitmap exports, preserving original clarity
+  const exportPixelRatio = 2
   const darkMode = editor.user.getUserPreferences().colorScheme === 'dark'
 
   if (format === 'svg') {
@@ -1736,7 +1737,7 @@ function CowartImageToolbarContent() {
         onManipulatingStart={handleManipulatingStart}
       />
       {!isInCropTool && <CowartAnnotationEditToolbarButton imageShapeId={imageShapeId} />}
-      {!isInCropTool && <CowartExportAnnotatedImageButton imageShapeId={imageShapeId} />}
+      {!isInCropTool && <CowartCopyAnnotatedImageButton imageShapeId={imageShapeId} />}
     </>
   )
 }
@@ -1874,16 +1875,16 @@ function CowartAnnotationEditToolbarButton({ imageShapeId }) {
   )
 }
 
-const EXPORT_ANNOTATED_IMAGE_LABEL = '导出标注图'
-const EXPORT_ANNOTATED_IMAGE_RESET_MS = 2200
+const COPY_ANNOTATED_IMAGE_LABEL = '复制标注图'
+const COPY_ANNOTATED_IMAGE_RESET_MS = 2200
 
-function CowartExportAnnotatedImageButton({ imageShapeId }) {
+function CowartCopyAnnotatedImageButton({ imageShapeId }) {
   const editor = useEditor()
   const [status, setStatus] = useState('idle')
 
   useEffect(() => {
     if (status === 'processing' || status === 'idle') return
-    const timer = window.setTimeout(() => setStatus('idle'), EXPORT_ANNOTATED_IMAGE_RESET_MS)
+    const timer = window.setTimeout(() => setStatus('idle'), COPY_ANNOTATED_IMAGE_RESET_MS)
     return () => window.clearTimeout(timer)
   }, [status])
 
@@ -1892,24 +1893,7 @@ function CowartExportAnnotatedImageButton({ imageShapeId }) {
 
     setStatus('processing')
     try {
-      const { blob } = await renderCowartAnnotatedImage(editor, imageShapeId, 'png')
-
-      const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')
-      const fileName = `cowart-export-${timestamp}.png`
-
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.download = fileName
-      link.href = url
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      URL.revokeObjectURL(url)
-
-      if (navigator.clipboard?.write) {
-        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
-      }
-
+      await copyCowartAnnotatedImage(editor, imageShapeId, 'png')
       setStatus('success')
     } catch (error) {
       console.error(error)
@@ -1919,28 +1903,28 @@ function CowartExportAnnotatedImageButton({ imageShapeId }) {
 
   const title =
     status === 'processing'
-      ? '正在导出…'
+      ? '正在复制…'
       : status === 'success'
-        ? '已导出并复制到剪贴板'
+        ? '已复制到剪贴板'
         : status === 'error'
-          ? '导出失败，请重试'
-          : EXPORT_ANNOTATED_IMAGE_LABEL
+          ? '复制失败，请重试'
+          : COPY_ANNOTATED_IMAGE_LABEL
 
   const iconName = status === 'success' ? 'check' : status === 'error' ? 'warning-triangle' : 'duplicate'
 
   return (
     <TldrawUiToolbarButton
       aria-label={title}
-      className="cowart-export-annotated-image-toolbar-button"
+      className="cowart-copy-annotated-image-toolbar-button"
       data-status={status}
-      data-testid="tool.cowart-export-annotated-image"
+      data-testid="tool.cowart-copy-annotated-image"
       disabled={status === 'processing'}
       onClick={handleClick}
       title={title}
       type="icon"
     >
       <TldrawUiButtonIcon icon={iconName} small />
-      <span className="cowart-export-annotated-image-toolbar-label">{EXPORT_ANNOTATED_IMAGE_LABEL}</span>
+      <span className="cowart-copy-annotated-image-toolbar-label">{COPY_ANNOTATED_IMAGE_LABEL}</span>
     </TldrawUiToolbarButton>
   )
 }
