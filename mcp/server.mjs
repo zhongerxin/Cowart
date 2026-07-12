@@ -73,6 +73,11 @@ const server = new McpServer(
   },
 );
 
+const isPlainMode =
+  process.env.COWART_MCP_MODE === "plain" ||
+  process.env.mcp_mode === "plain" ||
+  process.argv.includes("--plain");
+
 registerCowartWidget(server);
 registerCowartStateTools(server);
 registerCowartImageTools(server);
@@ -883,6 +888,53 @@ async function downloadCowartFile(args = {}) {
 }
 
 function registerCowartWidget(mcpServer) {
+  if (isPlainMode) {
+    mcpServer.registerTool(
+      TOOL_RENDER_WIDGET,
+      {
+        title: "Render Cowart Canvas Widget",
+        description:
+          "Open the native Cowart canvas widget for the active Codex project. Pass projectDir for the user's workspace so canvas data is stored under <projectDir>/canvas.",
+        inputSchema: {
+          ...projectArgsSchema,
+          title: z.string().trim().optional(),
+          displayMode: displayModeSchema.optional(),
+        },
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      },
+      async (input = {}) => {
+        const { projectDir, canvasDir } = resolveCowartPaths(input);
+        const title = nonEmptyString(input.title) || "Cowart Canvas";
+        const preferredDisplayMode = normalizeDisplayMode(input.displayMode);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Rendered Cowart canvas widget.",
+            },
+          ],
+          structuredContent: {
+            version: 1,
+            widget: "cowart-canvas-widget",
+            title,
+            rendering: "native-widget",
+            staticDir: COWART_STATIC_BUILD_DIR,
+            projectDir,
+            canvasDir,
+            preferredDisplayMode,
+          },
+        };
+      },
+    );
+    return;
+  }
+
   registerWidgetResource(mcpServer, {
     name: "cowart-canvas-widget",
     uri: COWART_WIDGET_URI,
