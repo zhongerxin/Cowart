@@ -17,6 +17,20 @@
   ],
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
+  "config": {
+    "type": "object",
+    "properties": {
+      "mcp_mode": {
+        "type": "string",
+        "default": "apps",
+        "enum": [
+          "apps",
+          "plain"
+        ],
+        "description": "MCP registration mode. Set to 'plain' to disable native widget rendering."
+      }
+    }
+  },
   "interface": {
     "displayName": "Cowart",
     "shortDescription": "Create, annotate, and generate on a native infinite-canvas widget in Codex.",
