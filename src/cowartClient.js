@@ -80,7 +80,7 @@ async function waitForWidgetPayload(signal) {
       reject(abortError())
     }
 
-    window.addEventListener('openai:set_globals', handleGlobals, { once: true })
+    window.addEventListener('openai:set_globals', handleGlobals)
     signal?.addEventListener('abort', handleAbort, { once: true })
   })
 }
