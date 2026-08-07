@@ -1,0 +1,21 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "cowart",
+  "version": "0.1.24",
+  "description": "A native canvas powered by tldraw for visual thinking, image generation, and annotation-driven edits.",
+  "author": {
+    "name": "ZHONG XIN",
+    "email": "zhongxin123456@gmail.com",
+    "url": "https://www.jiqiren.ai"
+  },
+  "homepage": "https://www.jiqiren.ai",
+  "repository": "https://github.com/zhongerxin/Cowart",
+  "license": "MIT",
+  "keywords": [
+    "canvas",
+    "tldraw",
+    "whiteboard",
+    "image-generation",
+    "visual-collaboration"
+  ]
+}
