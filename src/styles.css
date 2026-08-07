@@ -26,6 +26,13 @@ body {
   min-height: 0;
 }
 
+/* Codex overlays its mini composer at the bottom of the fullscreen widget
+   panel and covers the tldraw main toolbar. Feed the host bottom inset into
+   tldraw's own safe-area variable so the bottom toolbar clears the composer. */
+.cowart-canvas[data-host-display-mode='fullscreen'] .tlui-layout {
+  --tl-sab: calc(env(safe-area-inset-bottom, 0px) + var(--cowart-host-bottom-inset, 88px));
+}
+
 .cowart-skipped-records {
   position: fixed;
   z-index: 1000;

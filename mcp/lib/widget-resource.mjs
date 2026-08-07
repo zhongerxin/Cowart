@@ -175,7 +175,12 @@ function mcpHostBridgeScript(appVersion) {
   let mcpApp = null;
 
   function publishHostGlobals(globals) {
-    window.openai = Object.assign(window.openai || {}, globals);
+    // Host context notifications are partial updates; never clobber a
+    // previously published value with undefined.
+    const definedGlobals = Object.fromEntries(
+      Object.entries(globals).filter(([, value]) => value !== undefined),
+    );
+    window.openai = Object.assign(window.openai || {}, definedGlobals);
     window.dispatchEvent(new CustomEvent("openai:set_globals", {
       detail: { globals: window.openai },
     }));
@@ -197,8 +202,17 @@ function mcpHostBridgeScript(appVersion) {
       // Host styling is a progressive enhancement.
     }
 
+    // Host context notifications are partial updates: merge over the
+    // previously published context so a notification that only carries a
+    // few fields does not drop the rest (e.g. safeAreaInsets).
+    const previousHostContext =
+      window.openai?.hostContext && typeof window.openai.hostContext === "object"
+        ? window.openai.hostContext
+        : null;
+    const mergedContext = { ...previousHostContext, ...context };
+
     publishHostGlobals({
-      hostContext: context,
+      hostContext: mergedContext,
       displayMode: context.displayMode,
       availableDisplayModes: context.availableDisplayModes,
       widgetInstanceId: context.widgetInstanceId || context.widgetId,

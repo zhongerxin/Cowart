@@ -123,6 +123,11 @@ const AI_IMAGE_GENERATION_PANEL_ESTIMATED_H = 226
 const AI_IMAGE_GENERATION_STATUS_RESET_MS = 2200
 const AI_IMAGE_REFERENCE_MAX_FILES = 10
 const SKIPPED_RECORDS_NOTICE_AUTO_HIDE_MS = 5000
+// Codex overlays its mini composer on top of the fullscreen widget panel,
+// which covers the tldraw main toolbar. Lift the bottom UI by a safe-area
+// inset while the widget is hosted in fullscreen display mode.
+const COWART_HOST_BOTTOM_INSET_FALLBACK_PX = 88
+const COWART_HOST_BOTTOM_INSET_MAX_PX = 240
 const COWART_HTML_DRAFT_URL_ORIGIN = 'http://cowart.local'
 const COWART_HTML_DRAFT_EMBED_TYPE = 'cowart_html_draft'
 const AI_IMAGE_ASPECT_PRESETS = [
@@ -5720,11 +5725,66 @@ function writeCowartSelectionState(selectionSnapshot) {
   })
 }
 
+// Host context notifications are partial updates: a safe-area-only change
+// arrives without displayMode, and a mode-only change arrives without
+// safeAreaInsets. Keep the last explicitly reported values so a fullscreen
+// session is not dropped back to inline styling mid-flight.
+let cowartLastReportedDisplayMode = null
+let cowartLastReportedSafeAreaInsets = null
+
+function readCowartHostContext() {
+  const openai = typeof window !== 'undefined' ? window.openai : null
+  const hostContext =
+    openai?.hostContext && typeof openai.hostContext === 'object' ? openai.hostContext : null
+  const reportedMode =
+    typeof openai?.displayMode === 'string' && openai.displayMode
+      ? openai.displayMode
+      : typeof hostContext?.displayMode === 'string' && hostContext.displayMode
+        ? hostContext.displayMode
+        : null
+  if (reportedMode) cowartLastReportedDisplayMode = reportedMode
+  const reportedInsets =
+    hostContext?.safeAreaInsets && typeof hostContext.safeAreaInsets === 'object'
+      ? hostContext.safeAreaInsets
+      : null
+  if (reportedInsets) cowartLastReportedSafeAreaInsets = reportedInsets
+  return {
+    displayMode: reportedMode ?? cowartLastReportedDisplayMode,
+    safeAreaInsets: reportedInsets ?? cowartLastReportedSafeAreaInsets
+  }
+}
+
+function useCowartHostContext() {
+  const [hostContext, setHostContext] = useState(readCowartHostContext)
+
+  useEffect(() => {
+    function handleHostGlobals() {
+      setHostContext(readCowartHostContext())
+    }
+    window.addEventListener('openai:set_globals', handleHostGlobals)
+    return () => window.removeEventListener('openai:set_globals', handleHostGlobals)
+  }, [])
+
+  return hostContext
+}
+
+function getCowartHostBottomInset(hostContext) {
+  if (hostContext.displayMode !== 'fullscreen') return 0
+  const safeBottom = Number(hostContext.safeAreaInsets?.bottom)
+  const inset =
+    Number.isFinite(safeBottom) && safeBottom > 0
+      ? Math.max(safeBottom, COWART_HOST_BOTTOM_INSET_FALLBACK_PX)
+      : COWART_HOST_BOTTOM_INSET_FALLBACK_PX
+  return Math.min(inset, COWART_HOST_BOTTOM_INSET_MAX_PX)
+}
+
 export default function App() {
   const [snapshot, setSnapshot] = useState()
   const [viewState, setViewState] = useState()
   const [loadError, setLoadError] = useState(null)
   const [skippedRecords, setSkippedRecords] = useState([])
+  const hostContext = useCowartHostContext()
+  const hostBottomInset = getCowartHostBottomInset(hostContext)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -6094,7 +6154,14 @@ export default function App() {
   }
 
   return (
-    <main className="cowart-canvas" aria-label="Cowart infinite canvas">
+    <main
+      className="cowart-canvas"
+      aria-label="Cowart infinite canvas"
+      data-host-display-mode={hostContext.displayMode ?? undefined}
+      style={
+        hostBottomInset > 0 ? { '--cowart-host-bottom-inset': `${hostBottomInset}px` } : undefined
+      }
+    >
       <SkippedRecordsNotice records={skippedRecords} />
       <Tldraw
         snapshot={snapshot ?? undefined}
