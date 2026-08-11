@@ -1,11 +1,11 @@
 {
-  "name": "cowart-github",
+  "name": "cowart-thinking-github",
   "interface": {
-    "displayName": "Cowart GitHub"
+    "displayName": "Yogurt AI"
   },
   "plugins": [
     {
-      "name": "cowart",
+      "name": "cowart-thinking-canvas",
       "source": {
         "source": "local",
         "path": "."

@@ -3,7 +3,7 @@ const DEFAULT_APP_VERSION =
   typeof __COWART_APP_VERSION__ !== 'undefined' ? __COWART_APP_VERSION__ : 'unknown'
 const GOOGLE_TAG_SCRIPT_ID = 'cowart-google-analytics'
 const COWART_PAGE_LOCATION = 'https://www.jiqiren.ai/cowart-widget'
-const COWART_PAGE_TITLE = 'Cowart Widget'
+const COWART_PAGE_TITLE = 'Yogurt AI Widget'
 const ANALYTICS_EVENT_TIMEOUT_MS = 1200
 const ANALYTICS_TOOL_NAME = 'track_cowart_analytics_event'
 const ANALYTICS_CLIENT_ID_STORAGE_KEY = 'cowart.analytics.client_id'

@@ -1,4 +1,4 @@
 interface:
-  display_name: "Cowart Open Canvas"
-  short_description: "Open the Cowart infinite-canvas widget"
-  default_prompt: "Use $cowart:cowart-open-canvas to open the Cowart infinite-canvas widget."
+  display_name: "Yogurt AI Open Canvas"
+  short_description: "Open the Yogurt AI infinite-canvas widget"
+  default_prompt: "Use $cowart-thinking-canvas:cowart-open-canvas to open the Yogurt AI widget."

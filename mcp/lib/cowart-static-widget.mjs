@@ -51,7 +51,7 @@ async function ensureViteBinary() {
 
   await runNpmInstall();
   if (!existsSync(viteBinaryPath())) {
-    throw new Error("Missing Vite dependency after npm install in the Cowart plugin directory.");
+    throw new Error("Missing Vite dependency after npm install in the Yogurt AI plugin directory.");
   }
 }
 
@@ -67,7 +67,7 @@ function runNpmInstall() {
   const { command, args } = npmInstallCommand();
   return runCommand(command, args, {
     cwd: pluginRoot(),
-    failureLabel: "npm install failed while preparing the Cowart widget",
+    failureLabel: "npm install failed while preparing the Yogurt AI widget",
   });
 }
 
@@ -93,7 +93,7 @@ function runViteBuild(outDir) {
     env: {
       COWART_WIDGET_BUILD: "1",
     },
-    failureLabel: "Vite build failed while preparing the Cowart widget",
+    failureLabel: "Vite build failed while preparing the Yogurt AI widget",
   });
 }
 
@@ -214,7 +214,7 @@ async function inlineViteBuild(outDir) {
   );
 
   if (/\b(?:src|href)\s*=\s*"[^"]*\/assets\//i.test(html)) {
-    throw new Error("The Cowart widget still references external build assets.");
+    throw new Error("The Yogurt AI widget still references external build assets.");
   }
 
   const assetsDir = path.join(outDir, "assets");
@@ -224,7 +224,7 @@ async function inlineViteBuild(outDir) {
     );
     if (leftovers.length > 0) {
       throw new Error(
-        `The Cowart widget build emitted non-inlined assets: ${leftovers.join(", ")}`,
+        `The Yogurt AI widget build emitted non-inlined assets: ${leftovers.join(", ")}`,
       );
     }
   }
@@ -254,21 +254,21 @@ function assertCspCompatibleStaticHtml(html) {
   ];
   for (const [pattern, label] of forbiddenShellPatterns) {
     if (pattern.test(shellMarkup)) {
-      throw new Error(`The Cowart widget is not CSP-compatible: found ${label}.`);
+      throw new Error(`The Yogurt AI widget is not CSP-compatible: found ${label}.`);
     }
   }
 
   for (const value of resourceAttributeValues(shellMarkup)) {
     if (isExternalResourceValue(value)) {
       throw new Error(
-        `The Cowart widget is not CSP-compatible: found external resource ${value}.`,
+        `The Yogurt AI widget is not CSP-compatible: found external resource ${value}.`,
       );
     }
   }
 
   if (/\bfetch\s*\(/i.test(html) && !html.includes("__COWART_WIDGET_FETCH_GUARD__")) {
     throw new Error(
-      "The Cowart widget is not CSP-compatible: found fetch() without the fetch guard.",
+      "The Yogurt AI widget is not CSP-compatible: found fetch() without the fetch guard.",
     );
   }
 }

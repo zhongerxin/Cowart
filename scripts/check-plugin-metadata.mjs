@@ -33,20 +33,20 @@ for (const [source, version] of versions) {
   );
 }
 
-assert.equal(pluginManifest.name, "cowart");
-assert.equal(pluginManifest.repository, "https://github.com/zhongerxin/Cowart");
+assert.equal(pluginManifest.name, "cowart-thinking-canvas");
+assert.equal(pluginManifest.repository, "https://github.com/suud003/Cowart");
 assert.equal(pluginManifest.license, "MIT");
 
-assert.equal(marketplace.name, "cowart-github");
+assert.equal(marketplace.name, "cowart-thinking-github");
 const marketplacePlugin = marketplace.plugins?.find(({ name }) => name === pluginManifest.name);
-assert.ok(marketplacePlugin, "marketplace must include the Cowart plugin");
+assert.ok(marketplacePlugin, "marketplace must include the Yogurt AI plugin");
 assert.equal(marketplacePlugin.source?.source, "local");
 assert.ok(
   marketplacePlugin.source?.path === "." || marketplacePlugin.source?.path === "./",
-  "Cowart marketplace source must point at the repository root",
+  "Yogurt AI marketplace source must point at the repository root",
 );
 assert.equal(marketplacePlugin.policy?.installation, "AVAILABLE");
 assert.equal(marketplacePlugin.policy?.authentication, "ON_INSTALL");
 assert.equal(marketplacePlugin.category, pluginManifest.interface?.category);
 
-console.log(`Cowart plugin metadata OK (${pluginManifest.version})`);
+console.log(`Yogurt AI plugin metadata OK (${pluginManifest.version})`);

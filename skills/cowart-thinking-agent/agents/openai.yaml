@@ -1,0 +1,4 @@
+interface:
+  display_name: "Yogurt AI Thinking Agent"
+  short_description: "Grow and revise source-grounded ideas on a visual canvas."
+  default_prompt: "Use $cowart-thinking-agent to organize my selected sources and annotations into a reversible visual reasoning update."

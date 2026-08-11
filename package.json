@@ -1,28 +1,43 @@
 {
-  "name": "cowart-canvas",
-  "version": "0.1.25",
+  "name": "cowart-thinking-canvas",
+  "version": "0.2.0+codex.20260811134906",
+  "description": "A source-grounded, non-linear thinking canvas with reversible agent edits and annotation-driven reasoning.",
   "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/suud003/Cowart.git"
+  },
+  "homepage": "https://github.com/suud003/Cowart#readme",
+  "bugs": {
+    "url": "https://github.com/suud003/Cowart/issues"
+  },
   "type": "module",
   "scripts": {
+    "sync:excalidraw-fonts": "node ./scripts/sync-excalidraw-fonts.mjs",
     "check:plugin": "node ./scripts/check-plugin-metadata.mjs && node ./scripts/check-agent-plugin.mjs",
-    "check": "node --check ./mcp/server.mjs && node --check ./mcp/lib/plugin-root.mjs && node --check ./mcp/lib/widget-resource.mjs && node --check ./mcp/lib/cowart-static-widget.mjs && node --check ./mcp/lib/canvas-storage.mjs && node --check ./mcp/lib/ga4-analytics.mjs && node --check ./src/analytics.js && node --check ./scripts/probe-analytics.mjs && node --check ./scripts/probe-ga4.mjs && node --check ./scripts/probe-mcp.mjs && node --check ./scripts/start-mcp.mjs && node --check ./scripts/vite-build-once.mjs",
+    "check": "node --check ./mcp/server.mjs && node --check ./mcp/lib/plugin-root.mjs && node --check ./mcp/lib/widget-resource.mjs && node --check ./mcp/lib/cowart-static-widget.mjs && node --check ./mcp/lib/canvas-storage.mjs && node --check ./mcp/lib/ga4-analytics.mjs && node --check ./mcp/lib/thinking-canvas.mjs && node --check ./mcp/lib/thinking-layout.mjs && node --check ./mcp/lib/thinking-tools.mjs && node --check ./src/agentLasso.js && node --check ./src/agentLassoGeometry.js && node --check ./src/analytics.js && node --check ./src/annotationContext.js && node --check ./src/canvasExportDocument.js && node --check ./src/canvasPptx.js && node --check ./src/cowartGeoTypes.js && node --check ./src/cowartTheme.js && node --check ./src/cowartTypography.js && node --check ./src/excalidrawInteraction.js && node --check ./src/selectionContext.js && node --check ./src/thinkingReviewPrompt.js && node --check ./src/widgetMessaging.js && node --check ./scripts/probe-analytics.mjs && node --check ./scripts/probe-ga4.mjs && node --check ./scripts/probe-mcp.mjs && node --check ./scripts/start-mcp.mjs && node --check ./scripts/sync-excalidraw-fonts.mjs && node --check ./scripts/vite-build-once.mjs",
+    "test": "node --test test/*.test.mjs",
     "dev": "vite",
     "build": "node ./scripts/vite-build-once.mjs",
     "preview": "vite preview",
     "probe:mcp": "node ./scripts/probe-mcp.mjs",
     "probe:analytics": "node ./scripts/probe-analytics.mjs",
     "probe:ga4": "node ./scripts/probe-ga4.mjs",
-    "quality": "npm run check:plugin && npm run check && npm run build && npm run probe:mcp && npm run probe:analytics && npm run probe:ga4"
+    "quality": "npm run check:plugin && npm run check && npm test && npm run build && npm run probe:mcp && npm run probe:analytics && npm run probe:ga4"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "^1.7.4",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@tiptap/pm": "3.27.0",
-    "@tldraw/assets": "^5.1.1",
+    "@tldraw/assets": "5.1.1",
+    "@tldraw/store": "5.1.1",
+    "@tldraw/tlschema": "5.1.1",
     "@vitejs/plugin-react": "^5.0.0",
     "fractional-indexing": "^3.2.0",
     "html2canvas": "^1.4.1",
     "lucide-react": "^1.24.0",
+    "pptxgenjs": "4.0.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tldraw": "^5.1.1",

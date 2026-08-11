@@ -19,6 +19,7 @@ await client.connect(transport);
 
 let downloadedProbePath = null;
 let downloadedProbeDirectory = null;
+let probeProjectDir = null;
 
 function isCanvasDirectory(value) {
   const canvasDir = String(value || "");
@@ -44,6 +45,10 @@ try {
     "get_cowart_selection",
     "insert_cowart_image",
     "insert_cowart_html_draft",
+    "get_cowart_thinking_context",
+    "import_cowart_material",
+    "apply_cowart_thinking_operations",
+    "undo_cowart_thinking_operation",
     "track_cowart_analytics_event",
   ];
 
@@ -66,6 +71,7 @@ try {
   }
 
   const projectDir = await mkdtemp(path.join(tmpdir(), "cowart-widget-probe-"));
+  probeProjectDir = projectDir;
   const renderResult = await client.callTool({
     name: "render_cowart_canvas_widget",
     arguments: {
@@ -97,6 +103,41 @@ try {
   }
   if ((stateResult.structuredContent?.hydratedAssets || []).length !== 0) {
     throw new Error("Cowart canvas state should not hydrate image assets by default.");
+  }
+
+  const thinkingContextResult = await client.callTool({
+    name: "get_cowart_thinking_context",
+    arguments: { projectDir, scope: "page" },
+  });
+  const thinkingRevision = thinkingContextResult.structuredContent?.revision;
+  if (!thinkingRevision || thinkingContextResult.structuredContent?.shapes?.length !== 0) {
+    throw new Error("A fresh Cowart project should expose an empty, revisioned thinking context.");
+  }
+
+  const thinkingOperations = [{ type: "create_card", role: "question", title: "Probe question" }];
+  const thinkingPreview = await client.callTool({
+    name: "apply_cowart_thinking_operations",
+    arguments: { projectDir, baseRevision: thinkingRevision, operations: thinkingOperations, dryRun: true },
+  });
+  if (thinkingPreview.structuredContent?.applied !== false) {
+    throw new Error("Cowart thinking operations should support a non-persistent preview.");
+  }
+
+  const thinkingApply = await client.callTool({
+    name: "apply_cowart_thinking_operations",
+    arguments: { projectDir, baseRevision: thinkingRevision, operations: thinkingOperations },
+  });
+  const thinkingOperationId = thinkingApply.structuredContent?.operationId;
+  if (!thinkingOperationId || thinkingApply.structuredContent?.applied !== true) {
+    throw new Error("Cowart thinking operations did not persist an atomic edit.");
+  }
+
+  const thinkingUndo = await client.callTool({
+    name: "undo_cowart_thinking_operation",
+    arguments: { projectDir, operationId: thinkingOperationId },
+  });
+  if (thinkingUndo.structuredContent?.revision !== thinkingRevision) {
+    throw new Error("Cowart thinking undo did not restore the original revision.");
   }
 
   const probePageAssetDir = path.join(projectDir, "canvas", "pages", "probe-page", "assets");
@@ -232,8 +273,8 @@ try {
   }
 
   const widgetHtml = resource.contents?.[0]?.text || "";
-  if (!widgetHtml.includes("window.cowartMcp") || !widgetHtml.includes("Cowart Canvas")) {
-    throw new Error("Cowart widget HTML does not include the expected bridge and app shell.");
+  if (!widgetHtml.includes("window.cowartMcp") || !widgetHtml.includes("Yogurt AI Canvas")) {
+    throw new Error("Yogurt AI widget HTML does not include the expected bridge and app shell.");
   }
   if (/<script\b[^>]*\btype="module"/i.test(widgetHtml)) {
     throw new Error("Cowart widget HTML should use classic inline scripts for host compatibility.");
@@ -252,6 +293,9 @@ try {
   }
   if (downloadedProbeDirectory) {
     await rm(downloadedProbeDirectory, { recursive: true, force: true }).catch(() => undefined);
+  }
+  if (probeProjectDir) {
+    await rm(probeProjectDir, { recursive: true, force: true }).catch(() => undefined);
   }
   await client.close();
 }

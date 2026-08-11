@@ -71,16 +71,21 @@ for (const [name, server] of Object.entries(mcpConfig.mcpServers)) {
 }
 
 const resolvedRoot = await realpath(rootDir);
-for (const skillName of ["cowart-image-edit", "cowart-image-gen", "cowart-open-canvas"]) {
+for (const skillName of [
+  "cowart-image-edit",
+  "cowart-image-gen",
+  "cowart-open-canvas",
+  "cowart-thinking-agent",
+]) {
   const skillPath = path.join(rootDir, "skills", skillName, "SKILL.md");
   assert.ok((await lstat(skillPath)).isFile(), `${skillPath} must be a regular file`);
   assert.ok((await realpath(skillPath)).startsWith(`${resolvedRoot}${path.sep}`));
   const contents = await readFile(skillPath, "utf8");
-  const frontmatter = contents.match(/^---\n([\s\S]*?)\n---/u)?.[1];
+  const frontmatter = contents.match(/^---\r?\n([\s\S]*?)\r?\n---/u)?.[1];
   assert.ok(frontmatter, `${skillName} must contain YAML frontmatter`);
   assert.equal(frontmatter.match(/^name:\s*(.+)$/mu)?.[1], skillName);
   const description = frontmatter.match(/^description:\s*(.+)$/mu)?.[1];
   assert.ok(description && [...description].length <= 1024);
 }
 
-console.log(`Cowart Agent Plugin metadata OK (${manifest.version})`);
+console.log(`Yogurt AI Agent Plugin metadata OK (${manifest.version})`);

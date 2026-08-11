@@ -1,7 +1,7 @@
 interface:
-  display_name: "Cowart Image Gen"
-  short_description: "Replace a selected Cowart AI holder with a generated image"
-  default_prompt: "Use $cowart:cowart-image-gen to replace the selected Cowart AI image holder with a generated image."
+  display_name: "Yogurt AI Image Gen"
+  short_description: "Replace a selected Yogurt AI holder with a generated image"
+  default_prompt: "Use $cowart-thinking-canvas:cowart-image-gen to replace the selected Yogurt AI image holder with a generated image."
 
 policy:
   allow_implicit_invocation: true

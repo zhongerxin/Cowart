@@ -62,7 +62,7 @@ async function waitForWidgetPayload(signal) {
 
     const timer = window.setTimeout(() => {
       cleanup()
-      reject(new Error('Cowart widget storage target was not ready. Refusing to read or write without projectDir/canvasDir.'))
+      reject(new Error('Yogurt AI storage target was not ready. Refusing to read or write without projectDir/canvasDir.'))
     }, WIDGET_PAYLOAD_TIMEOUT_MS)
     const cleanup = () => {
       window.clearTimeout(timer)
@@ -95,7 +95,7 @@ async function callCowartServerTool(name, args = {}, options = {}) {
   })
   if (result?.isError) {
     const message = result.content?.find((item) => item.type === 'text')?.text
-    throw new Error(message || `Cowart server tool failed: ${name}`)
+    throw new Error(message || `Yogurt AI server tool failed: ${name}`)
   }
   return result.structuredContent ?? result
 }
@@ -103,7 +103,7 @@ async function callCowartServerTool(name, args = {}, options = {}) {
 async function fetchJson(url, options = {}) {
   const response = await window.fetch(url, options)
   if (!response.ok) {
-    throw new Error(`Cowart request failed: ${response.status} - ${response.statusText}`)
+    throw new Error(`Yogurt AI request failed: ${response.status} - ${response.statusText}`)
   }
   return response.json()
 }
@@ -191,7 +191,7 @@ export async function saveCowartViewState(viewState) {
 
 export async function saveCowartReferenceImage(reference) {
   if (!hasCowartWidgetBridge()) {
-    throw new Error('当前 Cowart 画布没有可用的 Codex MCP 文件保存桥。')
+    throw new Error('当前 Yogurt AI 画布没有可用的 Codex MCP 文件保存桥。')
   }
 
   return callCowartServerTool(TOOL_SAVE_REFERENCE_IMAGE, reference)
@@ -199,7 +199,7 @@ export async function saveCowartReferenceImage(reference) {
 
 export async function downloadCowartFile(download) {
   if (!hasCowartWidgetBridge()) {
-    throw new Error('当前 Cowart 画布没有可用的 Codex MCP 文件下载桥。')
+    throw new Error('当前 Yogurt AI 画布没有可用的 Codex MCP 文件下载桥。')
   }
 
   return callCowartServerTool(TOOL_DOWNLOAD_FILE, download)
@@ -207,7 +207,7 @@ export async function downloadCowartFile(download) {
 
 export async function copyCowartImageToClipboard(image) {
   if (!hasCowartWidgetBridge()) {
-    throw new Error('当前 Cowart 画布没有可用的系统剪贴板桥。')
+    throw new Error('当前 Yogurt AI 画布没有可用的系统剪贴板桥。')
   }
 
   return callCowartServerTool(TOOL_COPY_IMAGE_TO_CLIPBOARD, image)
@@ -231,7 +231,7 @@ export async function updateCowartHtmlDraft({ draftShapeId, htmlContent }) {
 
 export async function readCowartPageAsset(assetUrl, options = {}) {
   if (!hasCowartWidgetBridge()) {
-    throw new Error('当前 Cowart 画布没有可用的 Codex MCP 文件读取桥。')
+    throw new Error('当前 Yogurt AI 画布没有可用的 Codex MCP 文件读取桥。')
   }
 
   return callCowartServerTool(TOOL_READ_PAGE_ASSET, { assetUrl }, options)

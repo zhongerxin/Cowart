@@ -680,7 +680,7 @@ export async function saveCowartCanvasSnapshot(args = {}, snapshot) {
       paths: [],
       skippedRecords: sanitized.skippedRecords,
       blockedImageLosses: imageLosses,
-      message: `Cowart refused to save because ${imageLosses.length} existing image shape(s) disappeared without a user delete confirmation.`,
+      message: `Yogurt AI refused to save because ${imageLosses.length} existing image shape(s) disappeared without a user delete confirmation.`,
     };
   }
 

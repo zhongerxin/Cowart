@@ -1,15 +1,15 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-  "name": "cowart",
-  "version": "0.1.25",
-  "description": "A native canvas powered by tldraw for visual thinking, image generation, and annotation-driven edits.",
+  "name": "cowart-thinking-canvas",
+  "version": "0.2.0+codex.20260811134906",
+  "description": "A source-grounded, non-linear thinking canvas with reversible agent edits and annotation-driven reasoning.",
   "author": {
     "name": "ZHONG XIN",
     "email": "zhongxin123456@gmail.com",
     "url": "https://www.jiqiren.ai"
   },
   "homepage": "https://www.jiqiren.ai",
-  "repository": "https://github.com/zhongerxin/Cowart",
+  "repository": "https://github.com/suud003/Cowart",
   "license": "MIT",
   "keywords": [
     "canvas",

@@ -1,14 +1,14 @@
 {
-  "name": "cowart",
-  "version": "0.1.25",
-  "description": "A native Codex widget canvas powered by tldraw and built for visual thinking, image generation, and annotation-driven edits.",
+  "name": "cowart-thinking-canvas",
+  "version": "0.2.0+codex.20260811134906",
+  "description": "A source-grounded, non-linear thinking canvas with reversible agent edits and annotation-driven reasoning.",
   "author": {
     "name": "ZHONG XIN",
     "email": "zhongxin123456@gmail.com",
     "url": "https://www.jiqiren.ai"
   },
   "homepage": "https://www.jiqiren.ai",
-  "repository": "https://github.com/zhongerxin/Cowart",
+  "repository": "https://github.com/suud003/Cowart",
   "license": "MIT",
   "keywords": [
     "canvas",
@@ -20,9 +20,9 @@
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
   "interface": {
-    "displayName": "Cowart",
-    "shortDescription": "Create, annotate, and generate on a native infinite-canvas widget in Codex.",
-    "longDescription": "Cowart brings a tldraw-powered native widget canvas into Codex for visual planning and creative iteration. Open a project-backed canvas, sketch ideas, place AI image holders, generate images into selected slots, and turn annotated screenshots into revised image outputs while keeping canvas data in the user's project workspace.",
+    "displayName": "Yogurt AI",
+    "shortDescription": "Think with sources, editable visuals, and reversible annotation-driven agent edits.",
+    "longDescription": "Yogurt AI extends the tldraw-powered Cowart workspace with source-aware material cards, compact canvas context, atomic reasoning operations, guarded undo, selected-region annotation, and whole-canvas HTML or PowerPoint export.",
     "developerName": "ZHONG XIN",
     "category": "Productivity",
     "websiteURL": "https://www.jiqiren.ai",
@@ -32,14 +32,19 @@
     "capabilities": [
       "Interactive canvas",
       "Native Codex widget",
+      "Source-grounded reasoning",
+      "Atomic reversible edits",
       "AI image generation",
       "Annotation-driven editing",
+      "HTML and PowerPoint canvas export",
       "Project-local persistence"
     ],
     "defaultPrompt": [
-      "Open the Cowart canvas for this project.",
-      "Use my Cowart annotation screenshot to generate a clean revised image beside the original.",
-      "Generate a new image into the selected Cowart AI image holder."
+      "Open Yogurt AI for this project.",
+      "Organize these documents into source-linked cards and relationships on the canvas.",
+      "Interpret my selected canvas annotations and apply the smallest reversible edit.",
+      "Use my Yogurt AI annotation screenshot to generate a clean revised image beside the original.",
+      "Generate a new image into the selected Yogurt AI image holder."
     ]
   }
 }

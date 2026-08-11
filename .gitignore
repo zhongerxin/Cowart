@@ -4,3 +4,5 @@ dist/
 /canvas/
 /output/
 .codex-plugin/analytics.local.json
+/screenshots/*profile*/
+/screenshots/chrome-*/

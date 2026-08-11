@@ -2,6 +2,7 @@ import {
   ArrowDownToolbarItem,
   ArrowLeftToolbarItem,
   ArrowRightToolbarItem,
+  ArrowShapeUtil,
   ArrowToolbarItem,
   ArrowUpToolbarItem,
   AssetToolbarItem,
@@ -12,6 +13,10 @@ import {
   DefaultImageToolbarContent,
   DefaultToolbar,
   DefaultColorStyle,
+  DefaultDashStyle,
+  DefaultFillStyle,
+  DefaultFontStyle,
+  DefaultSizeStyle,
   DefaultStylePanel,
   DefaultStylePanelContent,
   DiamondToolbarItem,
@@ -21,6 +26,7 @@ import {
   EraserToolbarItem,
   FrameToolbarItem,
   FrameShapeUtil,
+  GeoShapeUtil,
   HandToolbarItem,
   HeartToolbarItem,
   HTMLContainer,
@@ -29,7 +35,9 @@ import {
   LaserToolbarItem,
   LineToolbarItem,
   NoteToolbarItem,
+  NoteShapeUtil,
   OvalToolbarItem,
+  PathBuilder,
   RectangleToolbarItem,
   RhombusToolbarItem,
   SelectToolbarItem,
@@ -41,13 +49,13 @@ import {
   TldrawUiButtonIcon,
   TldrawUiContextualToolbar,
   TldrawUiInput,
-  TldrawUiMenuToolItem,
   TldrawUiToolbarButton,
   TriangleToolbarItem,
   XBoxToolbarItem,
   createShapeId,
   DEFAULT_EMBED_DEFINITIONS,
   onDragFromToolbarToCreateShape,
+  renderPlaintextFromRichText,
   startEditingShapeWithRichText,
   toRichText,
   toDomPrecision,
@@ -57,10 +65,9 @@ import {
   useUiEvents,
   useValue
 } from 'tldraw'
-import { getAssetUrlsByImport } from '@tldraw/assets/imports.vite'
 import { AllSelection } from '@tiptap/pm/state'
 import html2canvas from 'html2canvas'
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Download, FileCode, Image as ImageIcon, Play, X } from 'lucide-react'
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Download, FileCode, Image as ImageIcon, LassoSelect, LockKeyhole, Play, X } from 'lucide-react'
 import 'tldraw/tldraw.css'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import aiHtmlToolIconRaw from './assets/ai-html.svg?raw'
@@ -68,10 +75,17 @@ import aiImageToolIconRaw from './assets/ai-image.svg?raw'
 import aiSlidesToolIconRaw from './assets/ai-slides.svg?raw'
 import annotationToolIconRaw from './assets/tool-comment.svg?raw'
 import {
-  sendTrackedWidgetMessage,
   trackAnnotationCreated,
   trackCanvasOpened
 } from './analytics.js'
+import {
+  collectAnnotationTargetShapeIds,
+  expandBox,
+  getAnnotationExportPixelRatio as getAnnotationEditExportPixelRatio,
+  isAnnotationMarkShape
+} from './annotationContext.js'
+import { buildCanvasHtmlDocument, canvasExportFileName } from './canvasExportDocument.js'
+import { buildCanvasPptxBase64 } from './canvasPptx.js'
 import {
   IS_COWART_WIDGET_BUILD,
   copyCowartImageToClipboard,
@@ -91,6 +105,35 @@ import {
   isCanvasSnapshot,
   sanitizeCanvasSnapshotForTldraw
 } from './canvasSnapshot.js'
+import {
+  COWART_FONT_SIZE_MAX,
+  COWART_FONT_SIZE_MIN,
+  COWART_FONT_SIZE_PRESETS,
+  clampCowartFontSize,
+  getCowartEffectiveFontSize,
+  getCowartFontSizeOverride,
+  getCowartNativeFontSize,
+  isCowartTypographyShape,
+  withCowartFontSizeMeta,
+  withoutCowartFontSizeMeta
+} from './cowartTypography.js'
+import { cowartTldrawThemes, installCowartHandDrawnFontFaces } from './cowartTheme.js'
+import { COWART_CARD_GEO } from './cowartGeoTypes.js'
+import {
+  imageContentFromDataUrl as dataUrlToImageContent,
+  followUpSender,
+  supportsMessageImages as supportsCowartMessageImages
+} from './widgetMessaging.js'
+import { CowartThinkingReviewToolbar } from './ThinkingReviewToolbar.jsx'
+import { ExcalidrawCowartChrome } from './ExcalidrawWorkspace.jsx'
+import {
+  COWART_AGENT_LASSO_TOOL_ID,
+  COWART_AGENT_LASSO_TOOL_LABEL,
+  CowartAgentLassoTool
+} from './agentLasso.js'
+import { getCowartSelection, getCowartSelectionSnapshot } from './selectionContext.js'
+
+installCowartHandDrawnFontFaces()
 
 const SELECTION_STATE_ELEMENT_ID = 'cowart-selection-state'
 const PAGE_ASSETS_ROUTE = '/page-assets/'
@@ -105,6 +148,11 @@ const AI_SLIDES_PRESENT_LABEL = '演示 Slides'
 const COWART_EXPORT_LABEL = '导出'
 const COWART_EXPORT_IMAGE_LABEL = '导出为图片'
 const COWART_EXPORT_HTML_LABEL = '导出为 HTML'
+const COWART_CANVAS_EXPORT_PADDING = 48
+const COWART_CANVAS_EXPORT_MAX_DIMENSION = 4096
+const COWART_CANVAS_EXPORT_MAX_PIXELS = 16_000_000
+const COWART_CANVAS_EXPORT_HTML_CAPTURE_RATIO = 1.5
+const COWART_CANVAS_DETAIL_SKIP_TYPES = new Set(['arrow', 'draw', 'highlight', 'line'])
 const AI_SLIDES_GAP = 32
 const COWART_OPEN_SLIDES_EVENT = 'cowart:open-slides'
 const AI_IMAGE_HOLDER_DEFAULT_W = 512
@@ -148,7 +196,7 @@ const ANNOTATION_SELECT_TEXT_SETTLE_ATTEMPTS = 4
 const ANNOTATION_EDIT_TOOL_LABEL = '按标注修改'
 const ANNOTATION_HTML_TOOL_LABEL = '按标注生成 Html'
 const ANNOTATION_EDIT_PROMPT = [
-  '[@cowart](plugin://cowart@personal) 按标注修改',
+  '[@cowart-thinking-canvas](plugin://cowart-thinking-canvas@cowart-thinking-github) 按标注修改',
   '',
   '请根据这张 Cowart 截图里的标注修改当前选中的图片：',
   '- 截图包含当前图片，以及连到图片里或图片附近的标注箭头和标注文字。',
@@ -157,13 +205,13 @@ const ANNOTATION_EDIT_PROMPT = [
   '- 保留原图和原标注不动，把新图放到原图旁边。'
 ].join('\n')
 const AI_HTML_LOCAL_ASSET_PROMPT_LINES = [
-  '- HTML 中不要引用 http:// 或 https:// 远程图片；Cowart widget 的 CSP 不允许 HTML iframe 直接加载这些资源。',
+  '- HTML 中不要引用 http:// 或 https:// 远程图片；Yogurt AI widget 的 CSP 不允许 HTML iframe 直接加载这些资源。',
   '- 如果 HTML 需要图片，先确定目标 shape 所在的 page，再把图片下载到当前项目的 canvas/pages/<page-id-without-page-prefix>/assets/ 目录。',
   '- HTML 内必须使用 /page-assets/<page-id-without-page-prefix>/<filename> 引用这些本地图片；不要使用 file:// URL 或绝对文件路径。',
-  '- Cowart 会在将 HTML 放入 iframe 前，通过 read_cowart_page_asset 把 /page-assets/ 图片转换为 data: URL。'
+  '- Yogurt AI 会在将 HTML 放入 iframe 前，通过 read_cowart_page_asset 把 /page-assets/ 图片转换为 data: URL。'
 ]
 const ANNOTATION_HTML_PROMPT = [
-  '[@cowart](plugin://cowart@personal) 按标注生成 AI HTML',
+  '[@cowart-thinking-canvas](plugin://cowart-thinking-canvas@cowart-thinking-github) 按标注生成 AI HTML',
   '',
   '请根据这张 Cowart 截图里的当前图片和周围标注，生成一个新的单文件 HTML 草稿：',
   '- 截图包含当前选中的图片，以及连到图片里或图片附近的标注箭头和标注文字。',
@@ -175,11 +223,7 @@ const ANNOTATION_HTML_PROMPT = [
   '- 保留原图片和原标注不动，把新 HTML 草稿放到原图片右侧。'
 ].join('\n')
 const ANNOTATION_EDIT_EXPORT_PADDING = 32
-const ANNOTATION_EDIT_NEAR_MARGIN_MIN = 160
-const ANNOTATION_EDIT_NEAR_MARGIN_MAX = 720
-const ANNOTATION_EDIT_RELATED_TEXT_MARGIN = 120
 const ANNOTATION_EDIT_STATUS_RESET_MS = 2200
-const ANNOTATION_EDIT_COLORS = new Set(['red', 'yellow', 'orange'])
 const HTML_DRAFT_CAPTURE_DELAY_MS = 2000
 const HTML_DRAFT_ASSET_RETRY_DELAYS_MS = [0, 200, 600, 1400]
 const HTML_DRAFT_DOM_EDIT_LABEL = '编辑文本'
@@ -187,7 +231,7 @@ const HTML_DRAFT_DOM_EDIT_DONE_LABEL = '完成编辑'
 const HTML_DRAFT_ANNOTATION_EDIT_LABEL = '按标注修改'
 const HTML_DRAFT_ANNOTATION_IMAGE_LABEL = '按标注生图'
 const HTML_DRAFT_ANNOTATION_EDIT_PROMPT = [
-  '[@cowart](plugin://cowart@personal) 按标注修改 AI HTML',
+  '[@cowart-thinking-canvas](plugin://cowart-thinking-canvas@cowart-thinking-github) 按标注修改 AI HTML',
   '',
   '请根据这张 Cowart 截图里的标注修改当前选中的 HTML 草稿：',
   '- 截图包含当前 HTML 草稿，以及草稿周围的标注箭头和标注文字。',
@@ -199,7 +243,7 @@ const HTML_DRAFT_ANNOTATION_EDIT_PROMPT = [
   '- 不要覆盖原草稿的 HTML 文件、shape 或画布记录。'
 ].join('\n')
 const HTML_DRAFT_ANNOTATION_IMAGE_PROMPT = [
-  '[@cowart](plugin://cowart@personal) 按标注生图',
+  '[@cowart-thinking-canvas](plugin://cowart-thinking-canvas@cowart-thinking-github) 按标注生图',
   '',
   '请使用内置 imagegen skill，根据这张 Cowart 截图里的 HTML 草稿和标注生成一张新的干净位图：',
   '- 截图包含当前 HTML 草稿，以及草稿周围的标注箭头和标注文字。',
@@ -209,9 +253,9 @@ const HTML_DRAFT_ANNOTATION_IMAGE_PROMPT = [
   '- 保留原 HTML 草稿和原标注不动，把生成的图片放到草稿右侧。'
 ].join('\n')
 const AI_IMAGE_GENERATION_PROMPT_PREFIX = [
-  '[@cowart](plugin://cowart@personal) 生成图片',
+  '[@cowart-thinking-canvas](plugin://cowart-thinking-canvas@cowart-thinking-github) 生成图片',
   '',
-  '请根据下面的 prompt 生成一张图片，并替换当前选中的 Cowart AI 图片框；最终画布里应留下普通图片形状，不保留 AI 图片框容器。',
+  '请根据下面的 prompt 生成一张图片，并替换当前选中的 Yogurt AI 图片框；最终画布里应留下普通图片形状，不保留 AI 图片框容器。',
   '默认生成一张；如果用户在 prompt 中明确要求多张图片，则用户要求的数量优先于上面的单数措辞。',
   '多张时必须分别生成对应数量的独立 bitmap，并作为多个普通图片形状从左到右平铺在画布上；第一张替换当前 AI 图片框，后续图片放在上一张图片右侧。',
   '插入多张图片时，第一张按默认流程替换 AI 图片框；之后每次使用上一张插入结果返回的 shapeId 作为 anchorShapeId，并设置 replaceAiImageHolder: false、matchAnchor: false、placement: "right"。',
@@ -220,9 +264,9 @@ const AI_IMAGE_GENERATION_PROMPT_PREFIX = [
   '不需要选择生图模型，使用 Codex 当前可用的图片生成能力。'
 ].join('\n')
 const AI_DRAFT_GENERATION_PROMPT_PREFIX = [
-  '[@cowart](plugin://cowart@personal) 生成 AI HTML',
+  '[@cowart-thinking-canvas](plugin://cowart-thinking-canvas@cowart-thinking-github) 生成 AI HTML',
   '',
-  '请根据下面的 prompt 生成一个单文件 HTML 草稿，并把它嵌入当前选中的 Cowart AI HTML 框。',
+  '请根据下面的 prompt 生成一个单文件 HTML 草稿，并把它嵌入当前选中的 Yogurt AI HTML 框。',
   '默认生成一个 HTML；如果用户在 prompt 中明确要求多个 HTML、多个方案或多张页面，则用户要求的数量优先于上面的单数措辞。',
   '多个 HTML 必须分别生成为对应数量的完整、独立、可运行的单文件 HTML，并作为多个 HTML embed 从左到右平铺在画布上；第一个替换当前 AI HTML 框，后续 HTML 放在上一个 HTML 右侧。',
   '不要在一个 AI HTML 里制作多页、分页、选项卡、轮播或幻灯片来代替多个独立 HTML；只有用户明确要求 AI Slides 时才使用多页 Slides 语义。',
@@ -232,7 +276,7 @@ const AI_DRAFT_GENERATION_PROMPT_PREFIX = [
   '完成后调用 Cowart MCP 工具 insert_cowart_html_draft，把 htmlContent 写入当前 page 的 canvas/pages/<page-id>/assets/，并替换对应 AI HTML 框为 HTML embed。'
 ].join('\n')
 const AI_SLIDES_GENERATION_PROMPT_PREFIX = [
-  '[@cowart](plugin://cowart@personal) 生成 AI Slides',
+  '[@cowart-thinking-canvas](plugin://cowart-thinking-canvas@cowart-thinking-github) 生成 AI Slides',
   '',
   '请根据下面的 prompt 生成一套视觉与叙事连贯的 AI Slides。',
   '每一页都必须是完整、独立、可运行的单文件 HTML；CSS 和 JS 尽量内联。',
@@ -240,7 +284,7 @@ const AI_SLIDES_GENERATION_PROMPT_PREFIX = [
   ...AI_HTML_LOCAL_ASSET_PROMPT_LINES
 ].join('\n')
 const AI_SLIDES_ANNOTATION_EDIT_PROMPT = [
-  '[@cowart](plugin://cowart@personal) 按标注修改 AI Slides',
+  '[@cowart-thinking-canvas](plugin://cowart-thinking-canvas@cowart-thinking-github) 按标注修改 AI Slides',
   '',
   '请根据 Cowart 截图中的原 AI Slides 和周围标注，生成一套修改后的新 Slides。',
   '原 AI Slides 和标注必须保持不动；新的目标 AI Slides 已经创建在原 Slides 下方，请只把修改后的页面加入新 Slides。',
@@ -279,6 +323,9 @@ const annotationToolIcon = (
     dangerouslySetInnerHTML={{ __html: annotationToolIconSvg }}
   />
 )
+const agentLassoToolIcon = (
+  <LassoSelect aria-hidden="true" className="cowart-agent-lasso-tool-icon" size={19} strokeWidth={1.8} />
+)
 const iconSvgSources = import.meta.glob(
   '../node_modules/@tldraw/assets/icons/icon/*.svg',
   { eager: true, query: '?raw', import: 'default' }
@@ -306,13 +353,7 @@ function buildCowartAssetUrls() {
     const name = path.split('/').pop().replace(/\.svg$/, '')
     icons[name] = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(source)))}`
   }
-  let base = {}
-  try {
-    base = getAssetUrlsByImport()
-  } catch (error) {
-    console.warn('Cowart could not load bundled tldraw asset URLs.', error)
-  }
-  return { ...base, icons: { ...base.icons, ...icons } }
+  return { icons }
 }
 
 function isCowartLocalAssetUrl(src) {
@@ -1082,87 +1123,6 @@ function getAnnotationColor(editor) {
   return color === DefaultColorStyle.defaultValue ? ANNOTATION_DEFAULT_COLOR : color
 }
 
-function expandBox(bounds, padding) {
-  return new Box(
-    bounds.x - padding,
-    bounds.y - padding,
-    bounds.w + padding * 2,
-    bounds.h + padding * 2
-  )
-}
-
-function annotationEditNearMargin(targetBounds) {
-  return Math.min(
-    ANNOTATION_EDIT_NEAR_MARGIN_MAX,
-    Math.max(ANNOTATION_EDIT_NEAR_MARGIN_MIN, Math.max(targetBounds.w, targetBounds.h))
-  )
-}
-
-function shapeHasAnnotationColor(shape) {
-  const color = shape?.props?.color
-  const labelColor = shape?.props?.labelColor
-  return ANNOTATION_EDIT_COLORS.has(color) || ANNOTATION_EDIT_COLORS.has(labelColor)
-}
-
-function isAnnotationArrowShape(shape) {
-  return shape?.type === 'arrow' && (shape.meta?.cowartAnnotationArrow === true || shapeHasAnnotationColor(shape))
-}
-
-function isAnnotationTextShape(shape) {
-  return shape?.type === 'text' && (shape.meta?.cowartAnnotationText === true || shapeHasAnnotationColor(shape))
-}
-
-function uniqueShapeIds(shapeIds) {
-  return Array.from(new Set(shapeIds.filter(Boolean)))
-}
-
-function collectAnnotationTargetShapeIds(editor, targetShapeId, isTargetShape, invalidTargetMessage) {
-  const targetShape = editor.getShape(targetShapeId)
-  if (!isTargetShape(targetShape)) {
-    throw new Error(invalidTargetMessage)
-  }
-
-  const targetBounds = editor.getShapePageBounds(targetShapeId)
-  if (!targetBounds) {
-    throw new Error('无法读取当前内容的画布位置。')
-  }
-
-  const nearBounds = expandBox(targetBounds, annotationEditNearMargin(targetBounds))
-  const relatedArrowIds = []
-  const relatedArrowBounds = []
-  const relatedTextIds = []
-
-  for (const shape of editor.getCurrentPageShapesSorted()) {
-    if (!shape || shape.id === targetShapeId) continue
-
-    const bounds = editor.getShapePageBounds(shape)
-    if (!bounds) continue
-
-    if (isAnnotationArrowShape(shape) && nearBounds.collides(bounds)) {
-      relatedArrowIds.push(shape.id)
-      relatedArrowBounds.push(bounds)
-      continue
-    }
-
-    if (!isAnnotationTextShape(shape)) continue
-
-    if (nearBounds.collides(bounds)) {
-      relatedTextIds.push(shape.id)
-      continue
-    }
-
-    if (
-      relatedArrowBounds.some((arrowBounds) =>
-        expandBox(arrowBounds, ANNOTATION_EDIT_RELATED_TEXT_MARGIN).collides(bounds)
-      )
-    ) {
-      relatedTextIds.push(shape.id)
-    }
-  }
-
-  return uniqueShapeIds([targetShapeId, ...relatedArrowIds, ...relatedTextIds])
-}
-
 function collectAnnotationEditShapeIds(editor, imageShapeId) {
   return collectAnnotationTargetShapeIds(
     editor,
@@ -1240,13 +1200,6 @@ function buildAnnotationHtmlPrompt({ imageShape, shapeIds, exportWidth, exportHe
   ].join('\n')
 }
 
-function getAnnotationEditExportPixelRatio(bounds) {
-  const maxDimension = Math.max(bounds.w, bounds.h)
-  if (maxDimension > 1600) return 1
-  if (maxDimension > 1000) return 1.5
-  return 2
-}
-
 function annotationEditScreenshotFileName() {
   const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')
   return `annotation-edit-${timestamp}.png`
@@ -1255,50 +1208,6 @@ function annotationEditScreenshotFileName() {
 function annotationHtmlScreenshotFileName() {
   const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')
   return `image-annotation-html-${timestamp}.png`
-}
-
-function dataUrlToImageContent(dataUrl, meta = {}) {
-  const match = String(dataUrl).match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/)
-  if (!match) {
-    throw new Error('导出的截图不是有效的图片 data URL。')
-  }
-
-  return {
-    type: 'image',
-    data: match[2],
-    mimeType: match[1],
-    _meta: meta
-  }
-}
-
-function followUpSender() {
-  let sendMessage = null
-  if (typeof window.cowartMcp?.sendFollowUpMessage === 'function') {
-    sendMessage = (message) => window.cowartMcp.sendFollowUpMessage(message)
-  } else if (typeof window.openai?.sendFollowUpMessage === 'function') {
-    sendMessage = (message) => window.openai.sendFollowUpMessage(message)
-  }
-  if (!sendMessage) return null
-
-  return (message, analyticsContext = {}) =>
-    sendTrackedWidgetMessage(sendMessage, message, analyticsContext)
-}
-
-function cowartHostCapabilities() {
-  try {
-    return (
-      window.cowartMcp?.getHostCapabilities?.() ||
-      window.openai?.hostCapabilities ||
-      globalThis.__COWART_MCP_APP__?.getHostCapabilities?.() ||
-      null
-    )
-  } catch (_error) {
-    return null
-  }
-}
-
-function supportsCowartMessageImages() {
-  return Boolean(cowartHostCapabilities()?.message?.image)
 }
 
 async function sendAnnotationEditRequest(editor, imageShapeId) {
@@ -1330,7 +1239,7 @@ async function sendAnnotationEditRequest(editor, imageShapeId) {
   })
   const sender = followUpSender()
   if (!sender) {
-    throw new Error('当前 Cowart 画布没有可用的 Codex MCP 消息桥。')
+    throw new Error('当前 Yogurt AI 画布没有可用的 Codex MCP 消息桥。')
   }
 
   const content = [{ type: 'text', text: prompt }]
@@ -1384,7 +1293,7 @@ async function sendAnnotationHtmlRequest(editor, imageShapeId) {
     screenshotAsset
   })
   const sender = followUpSender()
-  if (!sender) throw new Error('当前 Cowart 画布没有可用的 Codex MCP 消息桥。')
+  if (!sender) throw new Error('当前 Yogurt AI 画布没有可用的 Codex MCP 消息桥。')
 
   const content = [{ type: 'text', text: prompt }]
   if (supportsCowartMessageImages()) {
@@ -2090,6 +1999,385 @@ async function exportCowartSlides(editor, slidesShapeId, format) {
   return { directoryName, filePath: results.at(-1)?.directoryPath, results }
 }
 
+function cowartCanvasExportPixelRatio(
+  bounds,
+  {
+    maxDimension = COWART_CANVAS_EXPORT_MAX_DIMENSION,
+    maxPixels = COWART_CANVAS_EXPORT_MAX_PIXELS
+  } = {}
+) {
+  const width = Math.max(1, Number(bounds?.w) || 1)
+  const height = Math.max(1, Number(bounds?.h) || 1)
+  return Math.max(
+    0.2,
+    Math.min(
+      2,
+      maxDimension / Math.max(width, height),
+      Math.sqrt(maxPixels / (width * height))
+    )
+  )
+}
+
+function cachedCowartHtmlCapture(cache, shape) {
+  let capture = cache.get(shape.id)
+  if (!capture) {
+    capture = renderCowartHtmlDraftCanvas(shape, COWART_CANVAS_EXPORT_HTML_CAPTURE_RATIO)
+    cache.set(shape.id, capture)
+  }
+  return capture
+}
+
+async function renderCowartCanvasComposite(
+  editor,
+  rootShapeIds,
+  {
+    padding = COWART_CANVAS_EXPORT_PADDING,
+    htmlCaptureCache = new Map(),
+    maxDimension,
+    maxPixels,
+    outputFormat = 'png'
+  } = {}
+) {
+  const rootIds = rootShapeIds.filter((shapeId) => editor.getShape(shapeId))
+  if (!rootIds.length) throw new Error('当前画布没有可导出的内容。')
+
+  const includedShapeIds = editor.getShapeAndDescendantIds(rootIds)
+  const shapes = editor
+    .getCurrentPageShapesSorted()
+    .filter((shape) => includedShapeIds.has(shape.id) && !editor.isShapeHidden(shape.id))
+  if (!shapes.length) throw new Error('当前画布没有可见内容。')
+
+  const rawBounds = editor.getShapesPageBounds(shapes.map((shape) => shape.id))
+  if (!rawBounds) throw new Error('无法计算当前画布的导出范围。')
+  const bounds = expandBox(rawBounds, padding)
+  const pixelRatio = cowartCanvasExportPixelRatio(bounds, { maxDimension, maxPixels })
+  const htmlShapes = shapes.filter(isCowartHtmlDraftEmbedShape)
+  const baseCapturePromise = editor.toImageDataUrl(rootIds, {
+    bounds,
+    background: true,
+    darkMode: false,
+    format: 'png',
+    padding: 0,
+    pixelRatio
+  })
+  const htmlCapturesPromise = Promise.all(
+    htmlShapes.map((shape) => cachedCowartHtmlCapture(htmlCaptureCache, shape))
+  )
+  const [baseCapture, htmlCaptures] = await Promise.all([
+    baseCapturePromise,
+    htmlCapturesPromise
+  ])
+
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(Number(baseCapture.width) || bounds.w * pixelRatio))
+  canvas.height = Math.max(1, Math.round(Number(baseCapture.height) || bounds.h * pixelRatio))
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('浏览器无法创建画布导出图。')
+  context.fillStyle = '#ffffff'
+  context.fillRect(0, 0, canvas.width, canvas.height)
+  context.drawImage(await loadRasterImage(baseCapture.url), 0, 0, canvas.width, canvas.height)
+
+  const scaleX = canvas.width / bounds.w
+  const scaleY = canvas.height / bounds.h
+  for (const [index, shape] of htmlShapes.entries()) {
+    const capture = htmlCaptures[index]
+    const pageTransform = editor.getShapePageTransform(shape.id)
+    if (!pageTransform) continue
+    context.setTransform(
+      scaleX * pageTransform.a,
+      scaleY * pageTransform.b,
+      scaleX * pageTransform.c,
+      scaleY * pageTransform.d,
+      scaleX * (pageTransform.e - bounds.x),
+      scaleY * (pageTransform.f - bounds.y)
+    )
+    context.drawImage(
+      capture.canvas,
+      0,
+      0,
+      Number(shape.props?.w) || capture.displayWidth,
+      Number(shape.props?.h) || capture.displayHeight
+    )
+  }
+
+  const annotationShapeIds = shapes
+    .filter((shape) => isAnnotationMarkShape(shape))
+    .map((shape) => shape.id)
+  if (annotationShapeIds.length) {
+    const annotationOverlay = await editor.toImageDataUrl(annotationShapeIds, {
+      bounds,
+      background: false,
+      darkMode: false,
+      format: 'png',
+      padding: 0,
+      pixelRatio
+    })
+    context.setTransform(1, 0, 0, 1, 0, 0)
+    context.drawImage(
+      await loadRasterImage(annotationOverlay.url),
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    )
+  }
+
+  return {
+    dataUrl: outputFormat === 'jpeg'
+      ? canvas.toDataURL('image/jpeg', 0.86)
+      : canvas.toDataURL('image/png'),
+    width: canvas.width,
+    height: canvas.height,
+    displayWidth: bounds.w,
+    displayHeight: bounds.h,
+    bounds: { x: bounds.x, y: bounds.y, w: bounds.w, h: bounds.h },
+    shapeIds: shapes.map((shape) => shape.id)
+  }
+}
+
+function cowartExportShapeTypeLabel(shape) {
+  if (isCowartHtmlDraftEmbedShape(shape)) return 'HTML'
+  if (isAiSlidesShape(shape)) return 'Slides'
+  return ({
+    arrow: '连线',
+    bookmark: '链接',
+    draw: '手绘',
+    embed: '嵌入内容',
+    frame: '画框',
+    geo: '卡片',
+    group: '组合',
+    highlight: '高亮',
+    image: '图片',
+    line: '线条',
+    note: '便签',
+    text: '文本',
+    video: '视频'
+  })[shape?.type] || '画布内容'
+}
+
+function cowartShapePlainText(shape) {
+  if (!shape) return ''
+  const candidates = []
+  if (typeof shape.meta?.cowartThinkingBody === 'string') {
+    candidates.push(shape.meta.cowartThinkingBody)
+  }
+  if (shape.props?.richText) {
+    try {
+      candidates.push(renderPlaintextFromRichText(shape.props.richText))
+    } catch (_error) {
+      // Keep reading the remaining plain-text fields.
+    }
+  }
+  for (const key of ['text', 'name', 'altText']) {
+    if (typeof shape.props?.[key] === 'string') candidates.push(shape.props[key])
+  }
+  return candidates
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .filter((value, index, values) => values.indexOf(value) === index)
+    .join('\n')
+}
+
+async function cowartShapeExportText(shape, htmlTextCache) {
+  const plainText = cowartShapePlainText(shape)
+  if (!isCowartHtmlDraftEmbedShape(shape)) return plainText
+
+  let htmlText = htmlTextCache.get(shape.id)
+  if (htmlText === undefined) {
+    try {
+      const iframeDocument = await waitForHtmlDraftDocument(shape.id)
+      htmlText = String(iframeDocument.body?.innerText || '').trim()
+    } catch (_error) {
+      htmlText = ''
+    }
+    htmlTextCache.set(shape.id, htmlText)
+  }
+  return [plainText, htmlText].filter(Boolean).join('\n')
+}
+
+function cowartShapeExportTitle(shape, text) {
+  const firstLine = String(text || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean)
+  if (firstLine) return firstLine.length > 80 ? `${firstLine.slice(0, 79)}…` : firstLine
+  return cowartExportShapeTypeLabel(shape)
+}
+
+function cowartShapeExternalUrl(shape) {
+  for (const value of [shape?.props?.url, shape?.props?.href]) {
+    if (typeof value === 'string' && /^https?:\/\//i.test(value)) return value
+  }
+  return null
+}
+
+async function collectCowartCanvasExportItems(editor, shapes, htmlTextCache) {
+  const items = await Promise.all(shapes.map(async (shape) => {
+    const bounds = editor.getShapePageBounds(shape.id)
+    if (!bounds) return null
+    const text = await cowartShapeExportText(shape, htmlTextCache)
+    const link = cowartShapeExternalUrl(shape)
+    const isVisualContent = ['bookmark', 'embed', 'frame', 'image', 'video'].includes(shape.type)
+    if (!text && !link && !isVisualContent) return null
+    return {
+      shapeId: shape.id,
+      type: cowartExportShapeTypeLabel(shape),
+      title: cowartShapeExportTitle(shape, text),
+      text,
+      link,
+      bounds: { x: bounds.x, y: bounds.y, w: bounds.w, h: bounds.h }
+    }
+  }))
+  return items.filter(Boolean)
+}
+
+function cowartCanvasDetailShapes(editor, rootShapes) {
+  const detailShapes = []
+  const seen = new Set()
+  for (const rootShape of rootShapes) {
+    const candidates = isAiSlidesShape(rootShape)
+      ? getAiSlidesItems(editor, rootShape.id)
+      : [rootShape]
+    for (const shape of candidates) {
+      if (
+        !shape ||
+        seen.has(shape.id) ||
+        editor.isShapeHidden(shape.id) ||
+        COWART_CANVAS_DETAIL_SKIP_TYPES.has(shape.type)
+      ) {
+        continue
+      }
+      seen.add(shape.id)
+      detailShapes.push(shape)
+    }
+  }
+  return detailShapes
+}
+
+function cowartDetailShapeNeedsImage(shape) {
+  return ['bookmark', 'embed', 'frame', 'group', 'image', 'video'].includes(shape?.type)
+}
+
+async function cowartDetailShapeText(editor, shape, htmlTextCache) {
+  const descendantIds = editor.getShapeAndDescendantIds([shape.id])
+  const texts = []
+  for (const item of editor.getCurrentPageShapesSorted()) {
+    if (!descendantIds.has(item.id) || editor.isShapeHidden(item.id)) continue
+    const text = await cowartShapeExportText(item, htmlTextCache)
+    if (text && !texts.includes(text)) texts.push(text)
+  }
+  return texts.join('\n\n')
+}
+
+function downloadCowartBlob(blob, fileName) {
+  const url = URL.createObjectURL(blob)
+  downloadDataUrl(url, fileName)
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+async function exportCowartCanvas(editor, format) {
+  const rootShapes = editor
+    .getSortedChildIdsForParent(editor.getCurrentPageId())
+    .map((shapeId) => editor.getShape(shapeId))
+    .filter((shape) => shape && !editor.isShapeHidden(shape.id))
+  if (!rootShapes.length) throw new Error('当前画布没有可导出的内容。')
+
+  const exportedAt = new Date()
+  const fileName = canvasExportFileName(format, exportedAt)
+  const pageName = String(editor.getCurrentPage()?.name || '').trim()
+  const contentName = rootShapes
+    .map((shape) => String(shape.props?.name || '').trim())
+    .find((name) => name && ![AI_DRAFT_HOLDER_LABEL, AI_SLIDES_LABEL].includes(name))
+  const title = pageName && !/^Page(?: \d+)?$/i.test(pageName)
+    ? pageName
+    : contentName || 'Yogurt AI 画布'
+  const htmlCaptureCache = new Map()
+  const htmlTextCache = new Map()
+  const overview = await renderCowartCanvasComposite(
+    editor,
+    rootShapes.map((shape) => shape.id),
+    { htmlCaptureCache }
+  )
+  const overviewShapeIds = new Set(overview.shapeIds)
+  const overviewShapes = editor
+    .getCurrentPageShapesSorted()
+    .filter((shape) => overviewShapeIds.has(shape.id))
+  const items = await collectCowartCanvasExportItems(editor, overviewShapes, htmlTextCache)
+
+  if (format === 'html') {
+    const htmlContent = buildCanvasHtmlDocument({
+      title,
+      overview,
+      items,
+      exportedAt: exportedAt.toLocaleString('zh-CN')
+    })
+    let result = { fileName }
+    if (hasCowartWidgetBridge()) {
+      result = await downloadCowartFile({
+        dataUrl: textDataUrl(htmlContent, 'text/html'),
+        fileName,
+        mimeType: 'text/html'
+      })
+    } else {
+      downloadCowartBlob(new Blob([htmlContent], { type: 'text/html;charset=utf-8' }), fileName)
+    }
+    return { ...result, format, itemCount: items.length, slideCount: null }
+  }
+
+  const sections = []
+  for (const shape of cowartCanvasDetailShapes(editor, rootShapes)) {
+    const text = await cowartDetailShapeText(editor, shape, htmlTextCache)
+    const needsImage = cowartDetailShapeNeedsImage(shape)
+    if (!text && !needsImage) continue
+    let capture = null
+    if (needsImage) {
+      try {
+        capture = await renderCowartCanvasComposite(editor, [shape.id], {
+          padding: 24,
+          htmlCaptureCache,
+          maxDimension: 1600,
+          maxPixels: 2_500_000,
+          outputFormat: 'jpeg'
+        })
+      } catch (error) {
+        console.warn(`Could not render PPT detail shape ${shape.id}.`, error)
+      }
+    }
+    sections.push({
+      shapeId: shape.id,
+      type: cowartExportShapeTypeLabel(shape),
+      title: cowartShapeExportTitle(shape, text),
+      text,
+      imageDataUrl: capture?.dataUrl || null,
+      imageWidth: capture?.width || null,
+      imageHeight: capture?.height || null
+    })
+  }
+
+  const pptxResult = await buildCanvasPptxBase64({
+    title,
+    overview,
+    sections,
+    exportedAt: exportedAt.toISOString()
+  })
+  let result = { fileName }
+  if (hasCowartWidgetBridge()) {
+    result = await downloadCowartFile({
+      dataBase64: pptxResult.base64,
+      fileName,
+      mimeType: pptxResult.mimeType
+    })
+  } else {
+    downloadDataUrl(`data:${pptxResult.mimeType};base64,${pptxResult.base64}`, fileName)
+  }
+  return {
+    ...result,
+    format,
+    itemCount: items.length,
+    slideCount: pptxResult.slideCount
+  }
+}
+
 async function exportCowartHtmlDraftAnnotationScreenshot(editor, draftShapeId) {
   const shapeIds = collectHtmlDraftAnnotationShapeIds(editor, draftShapeId)
   const draftShape = editor.getShape(draftShapeId)
@@ -2283,8 +2571,8 @@ function buildAiSlidesAnnotationEditPrompt({
   return [
     AI_SLIDES_ANNOTATION_EDIT_PROMPT,
     '',
-    `Cowart source AI Slides frame: ${sourceSlidesShape.id}`,
-    `Cowart target AI Slides frame below source: ${targetSlidesShapeId}`,
+    `Yogurt AI source Slides frame: ${sourceSlidesShape.id}`,
+    `Yogurt AI target Slides frame below source: ${targetSlidesShapeId}`,
     `Required page count: exactly ${pageCount}.`,
     `Included annotation shapes: ${annotationCount}`,
     `Screenshot size: ${exportResult.width}x${exportResult.height}`,
@@ -2312,7 +2600,7 @@ function buildAiSlidesAnnotationEditPrompt({
 
 async function sendAiSlidesAnnotationEditRequest(editor, slidesShapeId) {
   const sender = followUpSender()
-  if (!sender) throw new Error('当前 Cowart 画布没有可用的 Codex MCP 消息桥。')
+  if (!sender) throw new Error('当前 Yogurt AI 画布没有可用的 Codex MCP 消息桥。')
 
   const sourceSlidesShape = editor.getShape(slidesShapeId)
   const sourceItems = getAiSlidesItems(editor, slidesShapeId)
@@ -2385,7 +2673,7 @@ function buildHtmlDraftAnnotationEditPrompt({ draftShape, exportResult, screensh
   return [
     HTML_DRAFT_ANNOTATION_EDIT_PROMPT,
     '',
-    `Cowart HTML draft shape: ${draftShape.id}`,
+    `Yogurt AI HTML draft shape: ${draftShape.id}`,
     `HTML draft asset URL: ${assetUrl || 'unavailable'}`,
     ...(assetPath ? [`HTML draft local path: ${assetPath}`] : []),
     `Included annotation shapes: ${annotationCount}`,
@@ -2414,7 +2702,7 @@ function buildHtmlDraftAnnotationImagePrompt({ draftShape, exportResult, screens
   return [
     HTML_DRAFT_ANNOTATION_IMAGE_PROMPT,
     '',
-    `Cowart HTML draft shape: ${draftShape.id}`,
+    `Yogurt AI HTML draft shape: ${draftShape.id}`,
     `Target canvas image size: ${targetWidth} x ${targetHeight} canvas units.`,
     `Target aspect ratio: ${targetWidth}:${targetHeight} (${ratio.toFixed(3)} width/height).`,
     `Included annotation shapes: ${annotationCount}`,
@@ -2435,7 +2723,7 @@ function buildHtmlDraftAnnotationImagePrompt({ draftShape, exportResult, screens
 
 async function sendHtmlDraftAnnotationRequest(editor, draftShapeId, mode) {
   const sender = followUpSender()
-  if (!sender) throw new Error('当前 Cowart 画布没有可用的 Codex MCP 消息桥。')
+  if (!sender) throw new Error('当前 Yogurt AI 画布没有可用的 Codex MCP 消息桥。')
 
   const draftShape = editor.getShape(draftShapeId)
   if (!isCowartHtmlDraftEmbedShape(draftShape)) {
@@ -2565,7 +2853,7 @@ function buildAiImageGenerationPrompt({ holderShape, userPrompt, references, ref
   return [
     AI_IMAGE_GENERATION_PROMPT_PREFIX,
     '',
-    `Cowart AI image holder shape: ${holderShape.id}`,
+    `Yogurt AI image holder shape: ${holderShape.id}`,
     `Target canvas slot: ${targetWidth} x ${targetHeight} canvas units.`,
     `Target aspect ratio: ${ratioLabel} (${ratio.toFixed(3)} width/height).`,
     'Compose the final bitmap for this slot without cropping or stretching.',
@@ -2583,7 +2871,7 @@ function buildAiDraftGenerationPrompt({ holderShape, userPrompt, references, ref
   return [
     AI_DRAFT_GENERATION_PROMPT_PREFIX,
     '',
-    `Cowart AI draft holder shape: ${holderShape.id}`,
+    `Yogurt AI draft holder shape: ${holderShape.id}`,
     `Target canvas draft slot: ${targetWidth} x ${targetHeight} canvas units.`,
     `Target aspect ratio: ${ratioLabel} (${ratio.toFixed(3)} width/height).`,
     'Design the HTML so it fills this iframe size without needing external files.',
@@ -2608,7 +2896,7 @@ function buildAiSlidesGenerationPrompt({ slidesShape, pageCount, userPrompt, ref
   return [
     AI_SLIDES_GENERATION_PROMPT_PREFIX,
     '',
-    `Cowart AI Slides frame: ${slidesShape.id}`,
+    `Yogurt AI Slides frame: ${slidesShape.id}`,
     `Required page count: exactly ${pageCount}.`,
     'Create the deck as a coherent sequence with a clear opening, development, and conclusion.',
     ...referenceLines,
@@ -2656,7 +2944,7 @@ function stopEditorOverlayEvent(event) {
 async function sendAiImageGenerationRequest({ holderShape, userPrompt, referenceFiles = [] }) {
   const sender = followUpSender()
   if (!sender) {
-    throw new Error('当前 Cowart 画布没有可用的 Codex MCP 消息桥。')
+    throw new Error('当前 Yogurt AI 画布没有可用的 Codex MCP 消息桥。')
   }
 
   const imageReferences = referenceFiles.slice(0, AI_IMAGE_REFERENCE_MAX_FILES)
@@ -2676,12 +2964,12 @@ async function sendAiImageGenerationRequest({ holderShape, userPrompt, reference
         })
       } catch (error) {
         if (!referenceAttached) {
-          throw new Error(`参考图无法保存到 Cowart 本地 assets：${error instanceof Error ? error.message : String(error)}`)
+          throw new Error(`参考图无法保存到 Yogurt AI 本地 assets：${error instanceof Error ? error.message : String(error)}`)
         }
         console.warn('Cowart reference image could not be saved; relying on direct image attachment.', error)
       }
     } else if (!referenceAttached) {
-      throw new Error('当前 Codex host 没有声明支持图片附件，也没有可用的 Cowart MCP 文件保存桥。')
+      throw new Error('当前 Codex host 没有声明支持图片附件，也没有可用的 Yogurt AI MCP 文件保存桥。')
     }
     references.push({ file: referenceFile, dataUrl: referenceDataUrl, savedReference })
   }
@@ -2719,7 +3007,7 @@ async function sendAiImageGenerationRequest({ holderShape, userPrompt, reference
 async function sendAiDraftGenerationRequest({ holderShape, userPrompt, referenceFiles = [] }) {
   const sender = followUpSender()
   if (!sender) {
-    throw new Error('当前 Cowart 画布没有可用的 Codex MCP 消息桥。')
+    throw new Error('当前 Yogurt AI 画布没有可用的 Codex MCP 消息桥。')
   }
 
   const imageReferences = referenceFiles.slice(0, AI_IMAGE_REFERENCE_MAX_FILES)
@@ -2739,12 +3027,12 @@ async function sendAiDraftGenerationRequest({ holderShape, userPrompt, reference
         })
       } catch (error) {
         if (!referenceAttached) {
-          throw new Error(`参考图无法保存到 Cowart 本地 assets：${error instanceof Error ? error.message : String(error)}`)
+          throw new Error(`参考图无法保存到 Yogurt AI 本地 assets：${error instanceof Error ? error.message : String(error)}`)
         }
         console.warn('Cowart draft reference image could not be saved; relying on direct image attachment.', error)
       }
     } else if (!referenceAttached) {
-      throw new Error('当前 Codex host 没有声明支持图片附件，也没有可用的 Cowart MCP 文件保存桥。')
+      throw new Error('当前 Codex host 没有声明支持图片附件，也没有可用的 Yogurt AI MCP 文件保存桥。')
     }
     references.push({ file: referenceFile, dataUrl: referenceDataUrl, savedReference })
   }
@@ -2782,7 +3070,7 @@ async function sendAiDraftGenerationRequest({ holderShape, userPrompt, reference
 async function sendAiSlidesGenerationRequest({ slidesShape, pageCount, userPrompt, referenceFiles = [] }) {
   const sender = followUpSender()
   if (!sender) {
-    throw new Error('当前 Cowart 画布没有可用的 Codex MCP 消息桥。')
+    throw new Error('当前 Yogurt AI 画布没有可用的 Codex MCP 消息桥。')
   }
 
   const imageReferences = referenceFiles.slice(0, AI_IMAGE_REFERENCE_MAX_FILES)
@@ -2802,12 +3090,12 @@ async function sendAiSlidesGenerationRequest({ slidesShape, pageCount, userPromp
         })
       } catch (error) {
         if (!referenceAttached) {
-          throw new Error(`参考图无法保存到 Cowart 本地 assets：${error instanceof Error ? error.message : String(error)}`)
+          throw new Error(`参考图无法保存到 Yogurt AI 本地 assets：${error instanceof Error ? error.message : String(error)}`)
         }
         console.warn('Cowart slides reference image could not be saved; relying on direct image attachment.', error)
       }
     } else if (!referenceAttached) {
-      throw new Error('当前 Codex host 没有声明支持图片附件，也没有可用的 Cowart MCP 文件保存桥。')
+      throw new Error('当前 Codex host 没有声明支持图片附件，也没有可用的 Yogurt AI MCP 文件保存桥。')
     }
     references.push({ file: referenceFile, dataUrl: referenceDataUrl, savedReference })
   }
@@ -2901,7 +3189,7 @@ class CowartAnnotationPointing extends StateNode {
       props: {
         kind: 'arc',
         dash: 'draw',
-        size: 'm',
+        size: 's',
         fill: 'none',
         color,
         labelColor: color,
@@ -3203,7 +3491,55 @@ class CowartEmbedShapeUtil extends CowartConfiguredEmbedShapeUtil {
   }
 }
 
-const cowartShapeUtils = [CowartFrameShapeUtil, CowartEmbedShapeUtil]
+const CowartGeoShapeUtil = GeoShapeUtil.configure({
+  customGeoTypes: {
+    [COWART_CARD_GEO]: {
+      getPath(w, h) {
+        const radius = Math.min(10, w / 4, h / 4)
+        return new PathBuilder()
+          .moveTo(radius, 0)
+          .lineTo(w - radius, 0)
+          .circularArcTo(radius, false, true, w, radius)
+          .lineTo(w, h - radius)
+          .circularArcTo(radius, false, true, w - radius, h)
+          .lineTo(radius, h)
+          .circularArcTo(radius, false, true, 0, h - radius)
+          .lineTo(0, radius)
+          .circularArcTo(radius, false, true, radius, 0)
+          .close()
+      },
+      snapType: 'polygon',
+      icon: 'geo-rectangle',
+      defaultSize: { w: 240, h: 120 }
+    }
+  },
+  getCustomDisplayValues(_editor, shape) {
+    const labelFontSize = getCowartFontSizeOverride(shape)
+    return labelFontSize ? { labelFontSize } : {}
+  }
+})
+
+const CowartNoteShapeUtil = NoteShapeUtil.configure({
+  getCustomDisplayValues(_editor, shape) {
+    const labelFontSize = getCowartFontSizeOverride(shape)
+    return labelFontSize ? { labelFontSize } : {}
+  }
+})
+
+const CowartArrowShapeUtil = ArrowShapeUtil.configure({
+  getCustomDisplayValues(_editor, shape) {
+    const labelFontSize = getCowartFontSizeOverride(shape)
+    return labelFontSize ? { labelFontSize } : {}
+  }
+})
+
+const cowartShapeUtils = [
+  CowartFrameShapeUtil,
+  CowartEmbedShapeUtil,
+  CowartGeoShapeUtil,
+  CowartNoteShapeUtil,
+  CowartArrowShapeUtil
+]
 
 const cowartUiOverrides = {
   actions(editor, actions, helpers) {
@@ -3300,27 +3636,25 @@ const cowartUiOverrides = {
       'tool.ai-image': AI_IMAGE_HOLDER_LABEL,
       'tool.ai-draft': AI_DRAFT_HOLDER_LABEL,
       'tool.ai-slides': AI_SLIDES_LABEL,
-      'tool.cowart-annotation': ANNOTATION_TOOL_LABEL
+      'tool.cowart-annotation': ANNOTATION_TOOL_LABEL,
+      'tool.cowart-agent-lasso': COWART_AGENT_LASSO_TOOL_LABEL
     },
     'zh-cn': {
       'tool.ai-image': AI_IMAGE_HOLDER_LABEL,
       'tool.ai-draft': AI_DRAFT_HOLDER_LABEL,
       'tool.ai-slides': AI_SLIDES_LABEL,
-      'tool.cowart-annotation': ANNOTATION_TOOL_LABEL
+      'tool.cowart-annotation': ANNOTATION_TOOL_LABEL,
+      'tool.cowart-agent-lasso': COWART_AGENT_LASSO_TOOL_LABEL
     }
   },
   tools(editor, tools) {
     return {
       ...tools,
-      arrow: {
-        ...tools.arrow,
-        kbd: undefined
-      },
       [AI_IMAGE_TOOL_ID]: {
         id: AI_IMAGE_TOOL_ID,
         label: 'tool.ai-image',
         icon: aiImageToolIcon,
-        kbd: 'a',
+        kbd: undefined,
         onSelect() {
           createAiImageHolderAtViewportCenter(editor)
         },
@@ -3401,6 +3735,19 @@ const cowartUiOverrides = {
         meta: {
           cowartTool: 'annotation'
         }
+      },
+      [COWART_AGENT_LASSO_TOOL_ID]: {
+        id: COWART_AGENT_LASSO_TOOL_ID,
+        label: 'tool.cowart-agent-lasso',
+        icon: agentLassoToolIcon,
+        kbd: undefined,
+        onSelect() {
+          unlockGlobalToolLock(editor)
+          editor.setCurrentTool(COWART_AGENT_LASSO_TOOL_ID)
+        },
+        meta: {
+          cowartTool: 'agent-lasso'
+        }
       }
     }
   }
@@ -3416,6 +3763,17 @@ const cowartComponents = {
 function CowartCanvasOverlay() {
   return (
     <>
+      <ExcalidrawCowartChrome
+        htmlIcon={aiHtmlToolIcon}
+        imageIcon={aiImageToolIcon}
+        onCreateHtml={createAiDraftHolderAtViewportCenter}
+        onCreateImage={createAiImageHolderAtViewportCenter}
+        onCreateSlides={createAiSlidesAtViewportCenter}
+        onExportCanvasHtml={(editor) => exportCowartCanvas(editor, 'html')}
+        onExportCanvasPptx={(editor) => exportCowartCanvas(editor, 'pptx')}
+        slidesIcon={aiSlidesToolIcon}
+      />
+      <CowartThinkingReviewToolbar />
       <CowartAiImageGenerationPanel />
       <CowartAiDraftGenerationPanel />
       <CowartAiSlidesGenerationPanel />
@@ -4724,8 +5082,169 @@ function CowartStylePanel(props) {
   return (
     <DefaultStylePanel {...props}>
       <DefaultStylePanelContent />
+      <CowartTypographyStyleControls />
       <CowartAiImageStyleControls />
     </DefaultStylePanel>
+  )
+}
+
+function CowartTypographyStyleControls() {
+  const editor = useEditor()
+  const selection = useValue(
+    'selected cowart typography shapes',
+    () => {
+      const themeFontSize = editor.getCurrentTheme().fontSize
+      const shapes = editor
+        .getSelectedShapeIds()
+        .map((shapeId) => editor.getShape(shapeId))
+        .filter(isCowartTypographyShape)
+
+      return {
+        themeFontSize,
+        shapes,
+        fontSizes: shapes.map((shape) => getCowartEffectiveFontSize(shape, themeFontSize))
+      }
+    },
+    [editor]
+  )
+  const [inputValue, setInputValue] = useState('')
+
+  const roundedFontSizes = selection.fontSizes.map((fontSize) => Math.round(fontSize ?? 0))
+  const sharedFontSize = roundedFontSizes.every((fontSize) => fontSize === roundedFontSizes[0])
+    ? roundedFontSizes[0]
+    : null
+  const selectionSignature = selection.shapes
+    .map((shape, index) => `${shape.id}:${roundedFontSizes[index]}`)
+    .join('|')
+  const hasCustomFontSize = selection.shapes.some((shape) =>
+    shape.type === 'text'
+      ? Math.abs(Number(shape.props.scale ?? 1) - 1) > 0.001
+      : getCowartFontSizeOverride(shape) !== null
+  )
+
+  useEffect(() => {
+    setInputValue(sharedFontSize === null ? '' : String(sharedFontSize))
+  }, [selectionSignature, sharedFontSize])
+
+  if (selection.shapes.length === 0) return null
+
+  function getFontSizeUpdate(shape, fontSize) {
+    if (shape.type === 'text') {
+      const nativeFontSize = getCowartNativeFontSize(shape, selection.themeFontSize)
+      if (!nativeFontSize) return null
+      return {
+        id: shape.id,
+        type: shape.type,
+        props: { scale: fontSize / nativeFontSize }
+      }
+    }
+
+    return {
+      id: shape.id,
+      type: shape.type,
+      meta: withCowartFontSizeMeta(shape, fontSize),
+      ...(shape.type === 'note' ? { props: { fontSizeAdjustment: null } } : {})
+    }
+  }
+
+  function applyFontSize(value, { markHistory = true } = {}) {
+    const nextFontSize = clampCowartFontSize(value)
+    if (nextFontSize === null) {
+      setInputValue(sharedFontSize === null ? '' : String(sharedFontSize))
+      return
+    }
+
+    const updates = selection.shapes
+      .map((shape) => getFontSizeUpdate(shape, nextFontSize))
+      .filter(Boolean)
+    if (updates.length === 0) return
+
+    if (markHistory) editor.markHistoryStoppingPoint(`set-cowart-font-size:${nextFontSize}`)
+    editor.updateShapes(updates)
+    setInputValue(String(nextFontSize))
+  }
+
+  function resetFontSize() {
+    editor.markHistoryStoppingPoint('reset-cowart-font-size')
+    editor.updateShapes(
+      selection.shapes.map((shape) => ({
+        id: shape.id,
+        type: shape.type,
+        ...(shape.type === 'text'
+          ? { props: { scale: 1 } }
+          : {
+              meta: withoutCowartFontSizeMeta(shape),
+              ...(shape.type === 'note' ? { props: { fontSizeAdjustment: null } } : {})
+            })
+      }))
+    )
+  }
+
+  function handleInputKeyDown(event) {
+    if (event.key === 'Enter') event.currentTarget.blur()
+    if (event.key === 'Escape') {
+      setInputValue(sharedFontSize === null ? '' : String(sharedFontSize))
+      event.currentTarget.blur()
+    }
+  }
+
+  const sliderValue = sharedFontSize ?? (Number(inputValue) || 24)
+
+  return (
+    <section className="cowart-typography-panel" aria-label="文字大小">
+      <div className="cowart-typography-heading">
+        <div>
+          <strong>字号</strong>
+          <span>{selection.shapes.length > 1 ? `${selection.shapes.length} 个对象` : '8–240 px'}</span>
+        </div>
+        <button disabled={!hasCustomFontSize} onClick={resetFontSize} type="button">
+          恢复默认
+        </button>
+      </div>
+
+      <div className="cowart-typography-size-row">
+        <input
+          aria-label="字号滑块"
+          max={COWART_FONT_SIZE_MAX}
+          min={COWART_FONT_SIZE_MIN}
+          onChange={(event) => applyFontSize(event.target.value, { markHistory: false })}
+          onKeyDown={() => editor.markHistoryStoppingPoint('adjust-cowart-font-size')}
+          onPointerDown={() => editor.markHistoryStoppingPoint('adjust-cowart-font-size')}
+          step="1"
+          type="range"
+          value={Math.min(COWART_FONT_SIZE_MAX, Math.max(COWART_FONT_SIZE_MIN, sliderValue))}
+        />
+        <label className="cowart-typography-number-field">
+          <input
+            aria-label="字号数值"
+            inputMode="numeric"
+            max={COWART_FONT_SIZE_MAX}
+            min={COWART_FONT_SIZE_MIN}
+            onBlur={(event) => applyFontSize(event.target.value)}
+            onChange={(event) => setInputValue(event.target.value)}
+            onKeyDown={handleInputKeyDown}
+            placeholder={sharedFontSize === null ? '混合' : undefined}
+            type="number"
+            value={inputValue}
+          />
+          <span>px</span>
+        </label>
+      </div>
+
+      <div className="cowart-typography-presets" aria-label="字号预设">
+        {COWART_FONT_SIZE_PRESETS.map((fontSize) => (
+          <button
+            key={fontSize}
+            aria-pressed={sharedFontSize === fontSize}
+            onClick={() => applyFontSize(fontSize)}
+            type="button"
+          >
+            {fontSize}
+          </button>
+        ))}
+      </div>
+      <p>仅调整文字，不改变卡片边框和箭头粗细。</p>
+    </section>
   )
 }
 
@@ -5614,7 +6133,7 @@ function CowartAnnotationHtmlToolbarButton({ imageShapeId }) {
   )
 }
 
-function CowartToolbarItem({ toolId }) {
+function CowartCustomToolButton({ className, icon, label, toolId }) {
   const editor = useEditor()
   const isSelected = useValue(
     `is ${toolId} selected`,
@@ -5622,42 +6141,50 @@ function CowartToolbarItem({ toolId }) {
     [editor, toolId]
   )
 
-  return <TldrawUiMenuToolItem toolId={toolId} isSelected={isSelected} />
-}
-
-function CowartAnnotationToolbarItem() {
-  const editor = useEditor()
-  const isSelected = useValue(
-    'is annotation selected',
-    () => editor.getCurrentToolId() === ANNOTATION_TOOL_ID,
-    [editor]
-  )
-
   return (
     <button
-      aria-label={ANNOTATION_TOOL_LABEL}
+      aria-label={label}
       aria-pressed={isSelected ? 'true' : 'false'}
-      className="tlui-button tlui-button__tool cowart-annotation-toolbar-button"
-      data-testid={`tools.${ANNOTATION_TOOL_ID}`}
-      data-value={ANNOTATION_TOOL_ID}
+      className={`tlui-button tlui-button__tool ${className}`}
+      data-testid={`tools.${toolId}`}
+      data-value={toolId}
       draggable={false}
       onClick={() => {
         unlockGlobalToolLock(editor)
-        editor.setCurrentTool(ANNOTATION_TOOL_ID)
+        editor.setCurrentTool(toolId)
       }}
       onTouchStart={(event) => {
         event.preventDefault()
         unlockGlobalToolLock(editor)
-        editor.setCurrentTool(ANNOTATION_TOOL_ID)
+        editor.setCurrentTool(toolId)
       }}
-      title={ANNOTATION_TOOL_LABEL}
+      title={label}
       type="button"
     >
-      {annotationToolIcon}
-      <span className="cowart-annotation-toolbar-label" draggable={false}>
-        {ANNOTATION_TOOL_LABEL}
-      </span>
+      {icon}
     </button>
+  )
+}
+
+function CowartAnnotationToolbarItem() {
+  return (
+    <CowartCustomToolButton
+      className="cowart-annotation-toolbar-button"
+      icon={annotationToolIcon}
+      label={ANNOTATION_TOOL_LABEL}
+      toolId={ANNOTATION_TOOL_ID}
+    />
+  )
+}
+
+function CowartAgentLassoToolbarItem() {
+  return (
+    <CowartCustomToolButton
+      className="cowart-agent-lasso-toolbar-button"
+      icon={agentLassoToolIcon}
+      label={COWART_AGENT_LASSO_TOOL_LABEL}
+      toolId={COWART_AGENT_LASSO_TOOL_ID}
+    />
   )
 }
 
@@ -5665,27 +6192,52 @@ function CowartToolbarDivider() {
   return <div aria-orientation="vertical" className="cowart-toolbar-divider" role="separator" />
 }
 
+function CowartToolLockButton() {
+  const editor = useEditor()
+  const isLocked = useValue(
+    'is tool locked',
+    () => editor.getInstanceState().isToolLocked,
+    [editor]
+  )
+
+  return (
+    <button
+      aria-label="保持当前工具 — Q"
+      aria-pressed={isLocked ? 'true' : 'false'}
+      className="tlui-button tlui-button__tool cowart-tool-lock-button"
+      data-testid="tools.lock"
+      onClick={() => editor.updateInstanceState({ isToolLocked: !isLocked })}
+      title="保持当前工具 — Q"
+      type="button"
+    >
+      <LockKeyhole aria-hidden="true" size={19} strokeWidth={1.8} />
+    </button>
+  )
+}
+
 function CowartToolbar(props) {
   return (
-    <DefaultToolbar {...props} maxItems={11}>
-      <CowartAnnotationToolbarItem />
-      <CowartToolbarDivider />
-      <SelectToolbarItem />
+    <DefaultToolbar {...props} maxItems={15} maxSizePx={710} minItems={15} minSizePx={710}>
+      <CowartToolLockButton />
       <HandToolbarItem />
-      <CowartToolbarItem toolId={AI_IMAGE_TOOL_ID} />
-      <CowartToolbarItem toolId={AI_DRAFT_TOOL_ID} />
-      <CowartToolbarItem toolId={AI_SLIDES_TOOL_ID} />
-      <CowartToolbarDivider />
-      <AssetToolbarItem />
-      <DrawToolbarItem />
-      <EraserToolbarItem />
-      <TextToolbarItem />
-      <ArrowToolbarItem />
-      <NoteToolbarItem />
+      <SelectToolbarItem />
       <RectangleToolbarItem />
-      <EllipseToolbarItem />
-      <TriangleToolbarItem />
       <DiamondToolbarItem />
+      <EllipseToolbarItem />
+      <ArrowToolbarItem />
+      <LineToolbarItem />
+      <DrawToolbarItem />
+      <TextToolbarItem />
+      <AssetToolbarItem />
+      <EraserToolbarItem />
+      <CowartToolbarDivider />
+      <CowartAgentLassoToolbarItem />
+      <CowartAnnotationToolbarItem />
+      <NoteToolbarItem />
+      <FrameToolbarItem />
+      <HighlightToolbarItem />
+      <LaserToolbarItem />
+      <TriangleToolbarItem />
       <HexagonToolbarItem />
       <OvalToolbarItem />
       <RhombusToolbarItem />
@@ -5698,52 +6250,8 @@ function CowartToolbar(props) {
       <ArrowUpToolbarItem />
       <ArrowDownToolbarItem />
       <ArrowRightToolbarItem />
-      <LineToolbarItem />
-      <HighlightToolbarItem />
-      <LaserToolbarItem />
-      <FrameToolbarItem />
     </DefaultToolbar>
   )
-}
-
-function getCowartSelection(editor) {
-  const selectedShapeIds = editor.getSelectedShapeIds()
-  return selectedShapeIds.map((id) => {
-    const shape = editor.getShape(id)
-    const asset = shape?.props?.assetId ? editor.getAsset(shape.props.assetId) : null
-    return {
-      id,
-      type: shape?.type ?? null,
-      parentId: shape?.parentId ?? null,
-      x: shape?.x ?? null,
-      y: shape?.y ?? null,
-      rotation: shape?.rotation ?? null,
-      meta: shape?.meta ?? null,
-      isAiImageHolder: shape?.meta?.cowartAiImageHolder === true,
-      isAiDraftHolder: shape?.meta?.cowartAiDraftHolder === true,
-      isAiSlides: shape?.meta?.cowartAiSlides === true,
-      isHtmlDraft: isCowartHtmlDraftEmbedShape(shape),
-      props: shape?.props ?? null,
-      asset: asset
-        ? {
-            id: asset.id,
-            type: asset.type,
-            name: asset.props?.name ?? null,
-            src: asset.props?.src ?? null,
-            w: asset.props?.w ?? null,
-            h: asset.props?.h ?? null,
-            mimeType: asset.props?.mimeType ?? null,
-            fileSize: asset.props?.fileSize ?? null
-          }
-        : null
-    }
-  })
-}
-
-function getCowartSelectionSnapshot(editor) {
-  return {
-    selectedShapes: getCowartSelection(editor)
-  }
 }
 
 function getCowartViewState(editor) {
@@ -5828,6 +6336,11 @@ export default function App() {
     window.__cowartEditor = editor
     window.__cowartSelection = () => getCowartSelection(editor)
     window.__cowartViewState = () => getCowartViewState(editor)
+    editor.setStyleForNextShapes(DefaultColorStyle, 'black')
+    editor.setStyleForNextShapes(DefaultDashStyle, 'draw')
+    editor.setStyleForNextShapes(DefaultFillStyle, 'none')
+    editor.setStyleForNextShapes(DefaultFontStyle, 'draw')
+    editor.setStyleForNextShapes(DefaultSizeStyle, 's')
     let lastSyncedSelectionState = ''
     let isSelectionStateSaving = false
     let hasPendingSelectionState = false
@@ -5873,11 +6386,7 @@ export default function App() {
     const selectionStateTimer = window.setInterval(syncSelectionState, 250)
 
     async function syncViewState() {
-      const viewStateSnapshot = {
-        ...getCowartViewState(editor),
-        updatedAt: new Date().toISOString()
-      }
-
+      const viewStateSnapshot = getCowartViewState(editor)
       const nextViewState = JSON.stringify(viewStateSnapshot)
       if (nextViewState === lastSyncedViewState) return
       lastSyncedViewState = nextViewState
@@ -5889,7 +6398,10 @@ export default function App() {
 
       isViewStateSaving = true
       try {
-        await saveCowartViewState(viewStateSnapshot)
+        await saveCowartViewState({
+          ...viewStateSnapshot,
+          updatedAt: new Date().toISOString()
+        })
       } catch (error) {
         console.error(error)
       } finally {
@@ -5972,7 +6484,7 @@ export default function App() {
           acknowledgedImageShapeDeletes: Array.from(acknowledgedImageShapeDeletes)
         })
         if (saveResult?.ok === false) {
-          throw new Error(saveResult.message || 'Cowart refused to save the canvas snapshot.')
+          throw new Error(saveResult.message || 'Yogurt AI refused to save the canvas snapshot.')
         }
         for (const imageShapeId of acknowledgedDeletesInSave) {
           acknowledgedImageShapeDeletes.delete(imageShapeId)
@@ -6168,7 +6680,7 @@ export default function App() {
   }
 
   return (
-    <main className="cowart-canvas" aria-label="Cowart infinite canvas">
+    <main className="cowart-canvas" aria-label="Yogurt AI infinite canvas">
       <SkippedRecordsNotice records={skippedRecords} />
       <Tldraw
         snapshot={snapshot ?? undefined}
@@ -6180,7 +6692,8 @@ export default function App() {
         overrides={cowartUiOverrides}
         components={cowartComponents}
         shapeUtils={cowartShapeUtils}
-        tools={[CowartAnnotationTool]}
+        themes={cowartTldrawThemes}
+        tools={[CowartAnnotationTool, CowartAgentLassoTool]}
       />
     </main>
   )

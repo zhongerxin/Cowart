@@ -37,6 +37,7 @@ import {
   COWART_GA4_EVENT_NAMES,
   sendCowartGa4Event,
 } from "./lib/ga4-analytics.mjs";
+import { registerCowartThinkingTools } from "./lib/thinking-tools.mjs";
 
 const TOOL_RENDER_WIDGET = "render_cowart_canvas_widget";
 const TOOL_GET_CANVAS_STATE = "get_cowart_canvas_state";
@@ -87,6 +88,7 @@ const COWART_CONNECT_DOMAINS = [...COWART_GOOGLE_DOMAINS];
 const COWART_RESOURCE_DOMAINS = [
   "data:",
   "blob:",
+  "https://cdn.jsdelivr.net",
   ...COWART_GOOGLE_DOMAINS,
 ];
 const COWART_FRAME_DOMAINS = [
@@ -120,13 +122,14 @@ const server = new McpServer(
   },
   {
     instructions:
-      "Render and update the native Cowart Codex widget. Use render_cowart_canvas_widget to open the canvas for the active project, get_cowart_selection for persisted widget selection, save_cowart_reference_image for widget-provided reference images, read_cowart_page_asset for lazy widget asset loading, download_cowart_file to save widget-requested files into the user's Downloads folder, insert_cowart_image to place or replace bitmap assets, and insert_cowart_html_draft to save and embed HTML drafts in the project-backed canvas without hand-writing tldraw records.",
+      "Render and update the native Yogurt AI canvas. Inspect source-aware page or selection context with get_cowart_thinking_context, preview and atomically apply typed local edits with apply_cowart_thinking_operations, attach project materials with import_cowart_material, and use undo_cowart_thinking_operation for guarded undo. Reuse insert_cowart_image and insert_cowart_html_draft for visual assets instead of hand-writing tldraw records.",
   },
 );
 
 registerCowartWidget(server);
 registerCowartStateTools(server);
 registerCowartImageTools(server);
+registerCowartThinkingTools(server);
 registerCowartAnalyticsTools(server);
 
 const transport = new StdioServerTransport();
@@ -151,7 +154,7 @@ function sanitizeFileName(name, fallbackName = "image.png") {
   return `${baseName || "image"}${extension}`;
 }
 
-function sanitizeDirectoryName(name, fallbackName = "Cowart Export") {
+function sanitizeDirectoryName(name, fallbackName = "Yogurt AI Export") {
   return basename(String(name || fallbackName))
     .replace(/[<>:"/\\|?*\u0000-\u001f]+/g, "-")
     .replace(/[. ]+$/g, "")
@@ -470,7 +473,7 @@ async function insertCowartImage(args = {}) {
   const canvasState = await readCowartCanvasState(args, { hydrateAssets: false });
   const snapshot = canvasState.snapshot;
   if (!snapshot || typeof snapshot !== "object" || !snapshot.schema || !snapshot.store) {
-    throw new Error("No Cowart canvas snapshot exists yet. Open the Cowart widget for the target project and create or save the canvas before inserting images.");
+    throw new Error("No Yogurt AI canvas snapshot exists yet. Open the Yogurt AI widget for the target project and create or save the canvas before inserting images.");
   }
 
   const store = snapshot.store;
@@ -590,7 +593,7 @@ async function insertCowartImage(args = {}) {
       crop: null,
       flipX: false,
       flipY: false,
-      altText: nonEmptyString(args.altText) || "Cowart inserted image",
+      altText: nonEmptyString(args.altText) || "Yogurt AI inserted image",
     },
     parentId,
     index,
@@ -657,7 +660,7 @@ async function insertCowartHtmlDraft(args = {}) {
   const canvasState = await readCowartCanvasState(args, { hydrateAssets: false });
   const snapshot = canvasState.snapshot;
   if (!snapshot || typeof snapshot !== "object" || !snapshot.schema || !snapshot.store) {
-    throw new Error("No Cowart canvas snapshot exists yet. Open the Cowart widget for the target project and create or save the canvas before inserting HTML drafts.");
+    throw new Error("No Yogurt AI canvas snapshot exists yet. Open the Yogurt AI widget for the target project and create or save the canvas before inserting HTML drafts.");
   }
 
   const store = snapshot.store;
@@ -837,7 +840,7 @@ async function saveCowartReferenceImage(args = {}) {
   const canvasState = await readCowartCanvasState(args, { hydrateAssets: false });
   const snapshot = canvasState.snapshot;
   if (!snapshot || typeof snapshot !== "object" || !snapshot.schema || !snapshot.store) {
-    throw new Error("No Cowart canvas snapshot exists yet. Open the Cowart widget for the target project and create or save the canvas before saving reference images.");
+    throw new Error("No Yogurt AI canvas snapshot exists yet. Open the Yogurt AI widget for the target project and create or save the canvas before saving reference images.");
   }
 
   const store = snapshot.store;
@@ -893,7 +896,7 @@ async function downloadCowartFile(args = {}) {
     throw new Error("assetUrl, dataUrl, or dataBase64 is required.");
   }
 
-  if (!buffer.length) throw new Error("Cowart download data is empty.");
+  if (!buffer.length) throw new Error("Yogurt AI download data is empty.");
 
   const downloadsDir = join(homedir(), "Downloads");
   const requestedName = sanitizeFileName(
@@ -915,7 +918,7 @@ async function downloadCowartFile(args = {}) {
     ? join(exportRoot, sanitizeDirectoryName(requestedSubdirectory, "pages"))
     : exportRoot;
   if (!isSafeChildPath(downloadsDir, targetDir) && targetDir !== downloadsDir) {
-    throw new Error("Invalid Cowart download directory.");
+    throw new Error("Invalid Yogurt AI download directory.");
   }
   await mkdir(targetDir, { recursive: true });
   const { fileName, filePath } = args.overwrite === true
@@ -950,10 +953,10 @@ async function copyCowartImageToClipboard(args = {}) {
     throw new Error("dataUrl or dataBase64 is required.");
   }
 
-  if (!buffer.length) throw new Error("Cowart clipboard image data is empty.");
-  if (mimeType !== "image/png") throw new Error(`Cowart clipboard only supports image/png, received ${mimeType}.`);
+  if (!buffer.length) throw new Error("Yogurt AI clipboard image data is empty.");
+  if (mimeType !== "image/png") throw new Error(`Yogurt AI clipboard only supports image/png, received ${mimeType}.`);
   if (buffer.length < 8 || !buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
-    throw new Error("Cowart clipboard data is not a valid PNG image.");
+    throw new Error("Yogurt AI clipboard data is not a valid PNG image.");
   }
 
   const dimensions = readPngDimensions(buffer);
@@ -974,7 +977,7 @@ async function copyCowartImageToClipboard(args = {}) {
 
 function readPngDimensions(buffer) {
   if (buffer.length < 24 || buffer.toString("ascii", 12, 16) !== "IHDR") {
-    throw new Error("Cowart clipboard PNG is missing its IHDR header.");
+    throw new Error("Yogurt AI clipboard PNG is missing its IHDR header.");
   }
   return {
     width: buffer.readUInt32BE(16),
@@ -1018,9 +1021,9 @@ async function writePngToSystemClipboard(buffer) {
       return;
     }
 
-    throw new Error(`Cowart system clipboard is not supported on ${systemPlatform}.`);
+    throw new Error(`Yogurt AI system clipboard is not supported on ${systemPlatform}.`);
   } catch (error) {
-    if (error instanceof Error && error.message.startsWith("Cowart system clipboard")) throw error;
+    if (error instanceof Error && error.message.startsWith("Yogurt AI system clipboard")) throw error;
     throw new Error(`系统剪贴板写入失败：${error instanceof Error ? error.message : String(error)}`);
   } finally {
     await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
@@ -1031,9 +1034,9 @@ function registerCowartWidget(mcpServer) {
   registerWidgetResource(mcpServer, {
     name: "cowart-canvas-widget",
     uri: COWART_WIDGET_URI,
-    title: "Cowart Canvas",
+    title: "Yogurt AI Canvas",
     description:
-      "A native Codex widget that renders Cowart's tldraw canvas directly and persists canvas data in the active project.",
+      "A native Codex widget that renders the Yogurt AI tldraw canvas directly and persists canvas data in the active project.",
     connectDomains: COWART_CONNECT_DOMAINS,
     resourceDomains: COWART_RESOURCE_DOMAINS,
     frameDomains: COWART_FRAME_DOMAINS,
@@ -1048,9 +1051,9 @@ function registerCowartWidget(mcpServer) {
     mcpServer,
     TOOL_RENDER_WIDGET,
     {
-      title: "Render Cowart Canvas Widget",
+      title: "Open Yogurt AI Canvas",
       description:
-        "Open the native Cowart canvas widget for the active Codex project. Pass projectDir for the user's workspace so canvas data is stored under <projectDir>/canvas.",
+        "Open the native Yogurt AI canvas widget for the active Codex project. Pass projectDir for the user's workspace so canvas data is stored under <projectDir>/canvas.",
       inputSchema: {
         ...projectArgsSchema,
         title: z.string().trim().optional(),
@@ -1070,20 +1073,20 @@ function registerCowartWidget(mcpServer) {
         "ui/resourceUri": COWART_WIDGET_URI,
         "openai/outputTemplate": COWART_WIDGET_URI,
         "openai/widgetAccessible": true,
-        "openai/toolInvocation/invoking": "Opening Cowart canvas...",
-        "openai/toolInvocation/invoked": "Cowart canvas ready",
+        "openai/toolInvocation/invoking": "Opening Yogurt AI...",
+        "openai/toolInvocation/invoked": "Yogurt AI canvas ready",
       },
     },
     async (input = {}) => {
       const { projectDir, canvasDir } = resolveCowartPaths(input);
-      const title = nonEmptyString(input.title) || "Cowart Canvas";
+      const title = nonEmptyString(input.title) || "Yogurt AI";
       const preferredDisplayMode = normalizeDisplayMode(input.displayMode);
 
       return {
         content: [
           {
             type: "text",
-            text: "Rendered Cowart canvas widget.",
+            text: "Rendered Yogurt AI canvas widget.",
           },
         ],
         structuredContent: {
@@ -1117,9 +1120,9 @@ function registerCowartAnalyticsTools(mcpServer) {
     mcpServer,
     TOOL_TRACK_ANALYTICS,
     {
-      title: "Track Cowart analytics event",
+      title: "Track Yogurt AI analytics event",
       description:
-        "Use this when the Cowart widget records an anonymous product-usage event in Google Analytics.",
+        "Use this when the Yogurt AI widget records an anonymous product-usage event in Google Analytics.",
       inputSchema: {
         clientId: z.string().trim().min(1).max(128),
         eventName: z.enum(COWART_GA4_EVENT_NAMES),
@@ -1186,9 +1189,9 @@ function registerCowartStateTools(mcpServer) {
   mcpServer.registerTool(
     TOOL_GET_CANVAS_STATE,
     {
-      title: "Get Cowart Canvas State",
+      title: "Get Yogurt AI Canvas State",
       description:
-        "Read the project-backed Cowart canvas snapshot, view state, and storage paths. The widget uses this instead of a localhost /api/canvas request.",
+        "Read the project-backed Yogurt AI canvas snapshot, view state, and storage paths. The widget uses this instead of a localhost /api/canvas request.",
       inputSchema: {
         ...projectArgsSchema,
         hydrateAssets: z.boolean().optional(),
@@ -1206,7 +1209,7 @@ function registerCowartStateTools(mcpServer) {
         content: [
           {
             type: "text",
-            text: `Loaded Cowart canvas state from ${state.canvasDir} (${state.storage}).`,
+            text: `Loaded Yogurt AI canvas state from ${state.canvasDir} (${state.storage}).`,
           },
         ],
         structuredContent: state,
@@ -1217,9 +1220,9 @@ function registerCowartStateTools(mcpServer) {
   mcpServer.registerTool(
     TOOL_READ_PAGE_ASSET,
     {
-      title: "Read Cowart Page Asset",
+      title: "Read Yogurt AI Page Asset",
       description:
-        "Read one project-local Cowart /page-assets/... image or HTML asset for lazy widget rendering. Prefer this over hydrating all assets into the canvas snapshot.",
+        "Read one project-local Yogurt AI /page-assets/... image or HTML asset for lazy widget rendering. Prefer this over hydrating all assets into the canvas snapshot.",
       inputSchema: {
         ...projectArgsSchema,
         assetUrl: z.string().trim(),
@@ -1237,7 +1240,7 @@ function registerCowartStateTools(mcpServer) {
         content: [
           {
             type: "text",
-            text: `Loaded Cowart page asset ${asset.assetUrl}.`,
+            text: `Loaded Yogurt AI page asset ${asset.assetUrl}.`,
           },
         ],
         structuredContent: asset,
@@ -1248,9 +1251,9 @@ function registerCowartStateTools(mcpServer) {
   mcpServer.registerTool(
     TOOL_SAVE_CANVAS_STATE,
     {
-      title: "Save Cowart Canvas State",
+      title: "Save Yogurt AI Canvas State",
       description:
-        "Persist a Cowart/tldraw store snapshot to the project canvas directory, preserving per-page files and page-local assets.",
+        "Persist a Yogurt AI/tldraw store snapshot to the project canvas directory, preserving per-page files and page-local assets.",
       inputSchema: {
         ...projectArgsSchema,
         snapshot: z.any(),
@@ -1272,7 +1275,7 @@ function registerCowartStateTools(mcpServer) {
           content: [
             {
               type: "text",
-              text: result.message || "Invalid Cowart canvas snapshot.",
+              text: result.message || "Invalid Yogurt AI canvas snapshot.",
             },
           ],
           structuredContent: result,
@@ -1282,7 +1285,7 @@ function registerCowartStateTools(mcpServer) {
         content: [
           {
             type: "text",
-            text: `Saved Cowart canvas state (${result.storage}).`,
+            text: `Saved Yogurt AI canvas state (${result.storage}).`,
           },
         ],
         structuredContent: result,
@@ -1293,9 +1296,9 @@ function registerCowartStateTools(mcpServer) {
   mcpServer.registerTool(
     TOOL_SAVE_SELECTION_STATE,
     {
-      title: "Save Cowart Selection State",
+      title: "Save Yogurt AI Selection State",
       description:
-        "Persist the current Cowart widget selection to canvas/cowart-selection.json so Codex can target selected shapes.",
+        "Persist the current Yogurt AI widget selection to canvas/cowart-selection.json so Codex can target selected shapes.",
       inputSchema: {
         ...projectArgsSchema,
         selection: z.any(),
@@ -1313,7 +1316,7 @@ function registerCowartStateTools(mcpServer) {
         content: [
           {
             type: "text",
-            text: `Saved Cowart selection state to ${result.path}.`,
+            text: `Saved Yogurt AI selection state to ${result.path}.`,
           },
         ],
         structuredContent: result,
@@ -1324,9 +1327,9 @@ function registerCowartStateTools(mcpServer) {
   mcpServer.registerTool(
     TOOL_SAVE_VIEW_STATE,
     {
-      title: "Save Cowart View State",
+      title: "Save Yogurt AI View State",
       description:
-        "Persist the current Cowart page and camera state to canvas/cowart-view-state.json.",
+        "Persist the current Yogurt AI page and camera state to canvas/cowart-view-state.json.",
       inputSchema: {
         ...projectArgsSchema,
         viewState: z.any(),
@@ -1344,7 +1347,7 @@ function registerCowartStateTools(mcpServer) {
         content: [
           {
             type: "text",
-            text: `Saved Cowart view state to ${result.path}.`,
+            text: `Saved Yogurt AI view state to ${result.path}.`,
           },
         ],
         structuredContent: result,
@@ -1358,9 +1361,9 @@ function registerCowartImageTools(mcpServer) {
     mcpServer,
     TOOL_COPY_IMAGE_TO_CLIPBOARD,
     {
-      title: "Copy Cowart PNG to system clipboard",
+      title: "Copy Yogurt AI PNG to system clipboard",
       description:
-        "Copy a PNG rendered by the Cowart widget to the local system clipboard when the widget iframe cannot use the browser Clipboard API.",
+        "Copy a PNG rendered by the Yogurt AI widget to the local system clipboard when the widget iframe cannot use the browser Clipboard API.",
       inputSchema: {
         ...projectArgsSchema,
         dataUrl: z.string().optional(),
@@ -1388,8 +1391,8 @@ function registerCowartImageTools(mcpServer) {
           {
             type: "text",
             text: result.dryRun
-              ? `Validated Cowart clipboard PNG (${result.width}x${result.height}).`
-              : `Copied Cowart PNG to the system clipboard (${result.width}x${result.height}).`,
+              ? `Validated Yogurt AI clipboard PNG (${result.width}x${result.height}).`
+              : `Copied Yogurt AI PNG to the system clipboard (${result.width}x${result.height}).`,
           },
         ],
         structuredContent: result,
@@ -1400,9 +1403,9 @@ function registerCowartImageTools(mcpServer) {
   mcpServer.registerTool(
     TOOL_DOWNLOAD_FILE,
     {
-      title: "Download Cowart File",
+      title: "Download Yogurt AI File",
       description:
-        "Save an image, HTML draft, or exported Slides package file requested by the Cowart widget into the user's system Downloads folder.",
+        "Save an image, HTML draft, or exported Slides package file requested by the Yogurt AI widget into the user's system Downloads folder.",
       inputSchema: {
         ...projectArgsSchema,
         assetUrl: z.string().trim().optional(),
@@ -1428,7 +1431,7 @@ function registerCowartImageTools(mcpServer) {
         content: [
           {
             type: "text",
-            text: `Downloaded Cowart file to ${result.filePath}.`,
+            text: `Downloaded Yogurt AI file to ${result.filePath}.`,
           },
         ],
         structuredContent: result,
@@ -1439,9 +1442,9 @@ function registerCowartImageTools(mcpServer) {
   mcpServer.registerTool(
     TOOL_SAVE_REFERENCE_IMAGE,
     {
-      title: "Save Cowart Reference Image",
+      title: "Save Yogurt AI Reference Image",
       description:
-        "Save a widget-selected reference image into the current Cowart page's assets folder so Codex can read it from the local project when ui/message image attachments are unavailable.",
+        "Save a widget-selected reference image into the current Yogurt AI page's assets folder so Codex can read it from the local project when ui/message image attachments are unavailable.",
       inputSchema: {
         ...projectArgsSchema,
         holderShapeId: z.string().trim().optional(),
@@ -1465,7 +1468,7 @@ function registerCowartImageTools(mcpServer) {
         content: [
           {
             type: "text",
-            text: `Saved Cowart reference image to ${result.assetPath}.`,
+            text: `Saved Yogurt AI reference image to ${result.assetPath}.`,
           },
         ],
         structuredContent: result,
@@ -1476,9 +1479,9 @@ function registerCowartImageTools(mcpServer) {
   mcpServer.registerTool(
     TOOL_INSERT_HTML_DRAFT,
     {
-      title: "Insert Cowart HTML Draft",
+      title: "Insert Yogurt AI HTML Draft",
       description:
-        "Save a single-file HTML draft into the current Cowart page's assets folder, update a targeted existing HTML draft in place, replace a targeted AI HTML holder, or append a 16:9 HTML page inside an AI Slides frame.",
+        "Save a single-file HTML draft into the current Yogurt AI page's assets folder, update a targeted existing HTML draft in place, replace a targeted AI HTML holder, or append a 16:9 HTML page inside an AI Slides frame.",
       inputSchema: {
         ...projectArgsSchema,
         htmlContent: z.string().optional(),
@@ -1521,9 +1524,9 @@ function registerCowartImageTools(mcpServer) {
   mcpServer.registerTool(
     TOOL_GET_SELECTION,
     {
-      title: "Get Cowart Selection",
+      title: "Get Yogurt AI Selection",
       description:
-        "Return the currently selected Cowart/tldraw shapes and image asset metadata from a project's canvas/cowart-selection.json state file.",
+        "Return the currently selected Yogurt AI/tldraw shapes and image asset metadata from a project's canvas/cowart-selection.json state file.",
       inputSchema: projectArgsSchema,
       annotations: {
         readOnlyHint: true,
@@ -1537,7 +1540,7 @@ function registerCowartImageTools(mcpServer) {
       const selectedShapes = selection.selectedShapes ?? [];
       const summary =
         selectedShapes.length === 0
-          ? "No Cowart shapes are currently selected."
+          ? "No Yogurt AI shapes are currently selected."
           : selectedShapes
               .map((shape) => {
                 const assetName = shape.asset?.name ? ` (${shape.asset.name})` : "";
@@ -1555,9 +1558,9 @@ function registerCowartImageTools(mcpServer) {
   mcpServer.registerTool(
     TOOL_INSERT_IMAGE,
     {
-      title: "Insert Cowart Image",
+      title: "Insert Yogurt AI Image",
       description:
-        "Copy a local bitmap into a Cowart page-local assets folder, create a tldraw image asset and shape, replace a targeted AI image holder by default, otherwise place it beside an anchor or clear page area, and save the project-backed Cowart canvas.",
+        "Copy a local bitmap into a Yogurt AI page-local assets folder, create a tldraw image asset and shape, replace a targeted AI image holder by default, otherwise place it beside an anchor or clear page area, and save the project-backed Yogurt AI canvas.",
       inputSchema: {
         imagePath: z.string().trim(),
         projectDir: z.string().trim().optional(),

@@ -1,0 +1,15 @@
+@font-face {
+  font-family: "Assistant";
+  src: url("./assets/fonts/Assistant-Regular.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: "Assistant";
+  src: url("./assets/fonts/Assistant-SemiBold.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 600;
+}

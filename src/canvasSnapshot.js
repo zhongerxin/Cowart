@@ -1,4 +1,13 @@
-import { createTLStore } from 'tldraw'
+import { Store } from '@tldraw/store'
+import { createTLSchema } from '@tldraw/tlschema'
+import './cowartGeoTypes.js'
+
+function createValidationStore() {
+  return new Store({
+    schema: createTLSchema(),
+    props: { defaultName: 'Yogurt AI Canvas' }
+  })
+}
 
 export function isCanvasSnapshot(value) {
   return value && typeof value === 'object' && value.store && value.schema
@@ -78,7 +87,7 @@ export function sanitizeCanvasSnapshotForTldraw(snapshot) {
     return { snapshot: null, skippedRecords: [] }
   }
 
-  const validationStore = createTLStore()
+  const validationStore = createValidationStore()
   const skippedRecords = []
   let migratedSnapshot
 

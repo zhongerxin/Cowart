@@ -1,15 +1,15 @@
 ---
 name: cowart-image-edit
-description: Generate new AI images from user-supplied Cowart annotation screenshots. Use when the user provides one or more screenshots showing Cowart images marked with the 批注 tool, arrows, or visible edit notes and wants Codex to apply those requested changes, create revised bitmap images, and place each result beside the corresponding original or in a nearby clear area without replacing, moving, hiding, or deleting the original images or annotations.
+description: Generate new AI images from user-supplied Yogurt AI annotation screenshots. Use when the user provides one or more screenshots showing images marked with the 批注 tool, arrows, or visible edit notes and wants Codex to apply those requested changes, create revised bitmap images, and place each result beside the corresponding original or in a nearby clear area without replacing, moving, hiding, or deleting the original images or annotations.
 ---
 
-# Cowart Image Edit
+# Yogurt AI Image Edit
 
-Use this skill to turn user-provided Cowart 批注 screenshots into revised AI-generated bitmaps placed next to the corresponding original images.
+Use this skill to turn user-provided Yogurt AI 批注 screenshots into revised AI-generated bitmaps placed next to the corresponding original images.
 
 ## Preconditions
 
-The native Cowart widget should be open for the active project. Cowart state is read and written through Cowart MCP tools, not through a localhost browser service.
+The native Yogurt AI widget should be open for the active project. Canvas state is read and written through the compatibility MCP tools, not through a localhost browser service.
 
 The user is responsible for providing the relevant screenshot(s). Do not auto-capture the current canvas and do not scan the whole canvas to infer edit requests; a canvas may contain many images with different annotations.
 
@@ -33,7 +33,7 @@ The user is responsible for providing the relevant screenshot(s). Do not auto-ca
 
    If the screenshot is too cropped, obstructed, or low-resolution to serve as a good image base, ask the user for the original image export or a cleaner screenshot of that specific image.
 
-   Do not read the current Cowart canvas to discover edit intent. Use the screenshot for the requested changes. Cowart state may be read later only to place the generated result without covering existing content.
+   Do not read the current Yogurt AI canvas to discover edit intent. Use the screenshot for the requested changes. Yogurt AI state may be read later only to place the generated result without covering existing content.
 
 4. Prepare image-generation input.
 
@@ -54,7 +54,7 @@ The user is responsible for providing the relevant screenshot(s). Do not auto-ca
    annotation-edit-20260620-153012.png
    ```
 
-   Resolve the actual local output image carefully before inserting it into Cowart. Do not assume the built-in image generation flow always writes a fresh file under `$CODEX_HOME/generated_images`.
+   Resolve the actual local output image carefully before inserting it into Yogurt AI. Do not assume the built-in image generation flow always writes a fresh file under `$CODEX_HOME/generated_images`.
 
    Preferred resolution order:
 
@@ -62,16 +62,16 @@ The user is responsible for providing the relevant screenshot(s). Do not auto-ca
    - If no new file path is returned, inspect the current Codex session JSONL for the current request and extract the PNG/base64 payload from the latest `image_generation_call.result`, then write it to the timestamped output filename.
    - Use `$CODEX_HOME/generated_images` only when you can prove the file was created by the current request, for example by matching its timestamp after this generation step. Never pick an older image merely because it is the newest file in a stale generated_images directory.
 
-   Before inserting the resolved file into Cowart, visually inspect the local bitmap and confirm it is the newly generated revised image for this screenshot, not a stale generated asset.
+   Before inserting the resolved file into Yogurt AI, visually inspect the local bitmap and confirm it is the newly generated revised image for this screenshot, not a stale generated asset.
 
-6. Insert the revised image beside the original with Cowart MCP.
+6. Insert the revised image beside the original with Yogurt AI MCP.
 
-   Prefer the Cowart MCP `insert_cowart_image` tool. Do not hand-write
+   Prefer the Yogurt AI MCP `insert_cowart_image` tool. Do not hand-write
    tldraw `asset` / `shape` records or fractional `index` keys unless the MCP
    tool is unavailable. The tool copies the bitmap into the page-local assets
    folder, creates the tldraw image asset and image shape, generates a valid
    tldraw fractional index, places the image beside the anchor while avoiding
-   overlaps, and saves through the project-backed Cowart canvas files.
+   overlaps, and saves through the project-backed Yogurt AI canvas files.
 
    Add a new tldraw image asset and a new image shape. Do not update, remove, hide, reparent, or reorder the original image, the original `AI 图片` frame, or any annotation shapes.
 
@@ -79,7 +79,7 @@ The user is responsible for providing the relevant screenshot(s). Do not auto-ca
 
    - If the user has selected the original image, use that image as the anchor.
    - If the user has selected the original `AI 图片` frame, use that frame as the anchor.
-   - If the screenshot clearly shows the original image and there is a unique matching generated/original image or `AI 图片` frame on the current Cowart page, use that as the anchor without asking the user to select it.
+   - If the screenshot clearly shows the original image and there is a unique matching generated/original image or `AI 图片` frame on the current Yogurt AI page, use that as the anchor without asking the user to select it.
    - If there are multiple screenshots/outputs and the matching anchors are not uniquely identifiable, ask the user to select each corresponding anchor or provide an explicit placement order.
    - If no anchor is clear and the user has not required a specific side-by-side comparison, place the result in a nearby clear area on the current page where it does not cover, move, hide, or delete the original image or annotations.
 
@@ -103,9 +103,9 @@ The user is responsible for providing the relevant screenshot(s). Do not auto-ca
    }
    ```
 
-7. Save through Cowart.
+7. Save through Yogurt AI.
 
-   Only do Cowart state access after the bitmap is generated. Use this access only to insert the new image beside the anchor or in a nearby clear area, not to discover edit intent.
+   Only do Yogurt AI state access after the bitmap is generated. Use this access only to insert the new image beside the anchor or in a nearby clear area, not to discover edit intent.
 
    Preferred MCP call shape:
 
@@ -122,7 +122,7 @@ The user is responsible for providing the relevant screenshot(s). Do not auto-ca
      "shapeMeta": {
        "cowartGeneratedFromAnnotationEdit": true
      },
-     "altText": "Revised image generated from Cowart annotation screenshot"
+     "altText": "Revised image generated from Yogurt AI annotation screenshot"
    }
    ```
 
@@ -138,7 +138,7 @@ The user is responsible for providing the relevant screenshot(s). Do not auto-ca
    /page-assets/<page-dir>/<filename>
    ```
 
-   Cowart's MCP storage layer will preserve per-page snapshots under:
+   Yogurt AI's MCP storage layer will preserve per-page snapshots under:
 
    ```text
    canvas/pages/<page-id-without-page-prefix>/cowart-canvas.json
@@ -146,7 +146,7 @@ The user is responsible for providing the relevant screenshot(s). Do not auto-ca
 
 8. Verify visually.
 
-   Let the Cowart widget refresh from MCP-backed storage, then confirm:
+   Let the Yogurt AI widget refresh from MCP-backed storage, then confirm:
 
    - the original image is still in the same place
    - the original 批注 arrows and labels are still visible

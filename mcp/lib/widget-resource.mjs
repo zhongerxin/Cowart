@@ -163,7 +163,7 @@ function escapeInlineScript(source) {
 
 function mcpHostBridgeScript(appVersion) {
   if (typeof appVersion !== "string" || !appVersion.trim()) {
-    throw new Error("Cowart widget bridge requires the plugin version.");
+    throw new Error("Yogurt AI widget bridge requires the plugin version.");
   }
 
   return `(() => {
@@ -227,7 +227,7 @@ function mcpHostBridgeScript(appVersion) {
 
   function toBridgeError(error) {
     if (error instanceof Error) return error;
-    return new Error(String(error || "Cowart host bridge is unavailable."));
+    return new Error(String(error || "Yogurt AI host bridge is unavailable."));
   }
 
   function currentSize() {
@@ -255,7 +255,7 @@ function mcpHostBridgeScript(appVersion) {
 
   async function waitForReady(app) {
     if (app?.ready) {
-      await withTimeout(app.ready, 4000, "Cowart host bridge did not become ready.");
+      await withTimeout(app.ready, 4000, "Yogurt AI host bridge did not become ready.");
     }
     if (globalThis.__COWART_MCP_HOST_ERROR__) {
       throw toBridgeError(globalThis.__COWART_MCP_HOST_ERROR__);
@@ -290,7 +290,7 @@ function mcpHostBridgeScript(appVersion) {
         return await withTimeout(
           app.callServerTool(request, options),
           options?.timeoutMs || 30000,
-          "Cowart server tool call timed out.",
+          "Yogurt AI server tool call timed out.",
         );
       } catch (error) {
         throw toBridgeError(error);

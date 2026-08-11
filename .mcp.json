@@ -1,8 +1,8 @@
 {
   "mcpServers": {
-    "cowart_mcp": {
-      "title": "Cowart Canvas Widget MCP",
-      "description": "Render and persist the native Cowart Codex widget without opening a localhost page.",
+    "cowart_thinking_mcp": {
+      "title": "Yogurt AI Canvas MCP",
+      "description": "Render, reason over, and persist the native Yogurt AI canvas without opening a localhost page.",
       "command": "node",
       "args": [
         "./scripts/start-mcp.mjs"

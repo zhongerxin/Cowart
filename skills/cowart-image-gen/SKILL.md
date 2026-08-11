@@ -1,15 +1,15 @@
 ---
 name: cowart-image-gen
-description: Generate a final AI bitmap for the Cowart canvas, including any requested in-image text by default. Use when the user asks Codex to create, fill, replace, or place an AI-generated image on a Cowart canvas. If an AI 图片 holder is selected, use it as the size target and replace it with the generated image by default; otherwise generate the image and insert it into the current Cowart page.
+description: Generate a final AI bitmap for the Yogurt AI canvas, including any requested in-image text by default. Use when the user asks Codex to create, fill, replace, or place an AI-generated image in Yogurt AI. If an AI 图片 holder is selected, use it as the size target and replace it with the generated image by default; otherwise generate the image and insert it into the current page.
 ---
 
-# Cowart Image Gen
+# Yogurt AI Image Gen
 
-Use this skill when the user wants an AI-generated image placed onto the Cowart canvas. A selected `AI 图片` holder gives a precise size and placement target, but it is not required. By default, a selected holder is a temporary target and should be replaced by the generated image.
+Use this skill when the user wants an AI-generated image placed onto the Yogurt AI canvas. A selected `AI 图片` holder gives a precise size and placement target, but it is not required. By default, a selected holder is a temporary target and should be replaced by the generated image.
 
 ## Preconditions
 
-The native Cowart widget should be open for the user's active project. Cowart state is read and written through Cowart MCP tools, not through a localhost browser service.
+The native Yogurt AI widget should be open for the user's active project. Canvas state is read and written through the compatibility MCP tools, not through a localhost browser service.
 
 New holders are tldraw `frame` shapes with:
 
@@ -27,7 +27,7 @@ meta flag. Support both shapes.
 
 ## Workflow
 
-1. Read the selected shape from Cowart with the MCP `get_cowart_selection` tool. Pass the active user project directory as `projectDir`.
+1. Read the selected shape from Yogurt AI with the MCP `get_cowart_selection` tool. Pass the active user project directory as `projectDir`.
 
 2. Check whether exactly one selected shape is an AI image holder. A holder is any selected shape with either:
 
@@ -41,7 +41,7 @@ meta flag. Support both shapes.
    meta.cowartAiImageHolder: true
    ```
 
-   If yes, use the holder replacement workflow below. If not, do not ask the user to select a holder; use the standalone workflow below and insert the generated image into the current Cowart page.
+   If yes, use the holder replacement workflow below. If not, do not ask the user to select a holder; use the standalone workflow below and insert the generated image into the current Yogurt AI page.
 
 3. Choose the placement workflow.
 
@@ -51,7 +51,7 @@ meta flag. Support both shapes.
    - `targetHeight`: selected holder `props.h`
    - `targetAspectRatio`: the reduced `targetWidth:targetHeight` ratio when it maps cleanly, plus the decimal `targetWidth / targetHeight`
 
-   If the selected holder matches a Cowart ratio preset such as `1:1`, `3:2`, `2:3`, `4:3`, `3:4`, `16:9`, or `9:16`, use that preset label as the human-readable aspect ratio. The generated image should be composed for this target size and aspect ratio, and should not rely on later stretching or cropping to fit the holder.
+   If the selected holder matches a Yogurt AI ratio preset such as `1:1`, `3:2`, `2:3`, `4:3`, `3:4`, `16:9`, or `9:16`, use that preset label as the human-readable aspect ratio. The generated image should be composed for this target size and aspect ratio, and should not rely on later stretching or cropping to fit the holder.
 
    The generated image should replace the selected holder as a normal tldraw image shape:
 
@@ -61,7 +61,7 @@ meta flag. Support both shapes.
 
    This leaves the final canvas with an image shape at the holder's position, not an AI holder that contains an image. Only preserve the holder when the user explicitly asks to keep the reusable slot.
 
-   Standalone workflow: when no AI holder is selected, generate the image anyway and insert it as a normal image shape on the current page. Prefer the current page from Cowart view state; if there is a selected non-holder shape and it is useful as context, place the image beside it, otherwise place it in a clear page area. If the user requested a size or aspect ratio, pass that size and ratio into generation and use it for display. Otherwise, use the generated bitmap's natural aspect ratio and a practical display width such as 512 canvas units.
+   Standalone workflow: when no AI holder is selected, generate the image anyway and insert it as a normal image shape on the current page. Prefer the current page from Yogurt AI view state; if there is a selected non-holder shape and it is useful as context, place the image beside it, otherwise place it in a clear page area. If the user requested a size or aspect ratio, pass that size and ratio into generation and use it for display. Otherwise, use the generated bitmap's natural aspect ratio and a practical display width such as 512 canvas units.
 
 4. Generate the bitmap with the built-in `imagegen` skill unless the user explicitly requests another image path. If the requested asset needs visible copy, labels, poster text, ad text, UI text, or typography, include that text directly in the image generation prompt and let the image model produce the final bitmap. Do not default to generating a text-free background and then adding text locally unless the user explicitly asks for local typography, deterministic text overlay, SVG/vector output, or another non-imagegen layout step.
 
@@ -75,7 +75,7 @@ meta flag. Support both shapes.
 
    If the image generation tool or model accepts size or aspect-ratio parameters, pass the closest supported option in addition to the prompt text. If only prompt text is available, the prompt text must still include `targetWidth`, `targetHeight`, and `targetAspectRatio`.
 
-   Resolve the actual local output image carefully before inserting it into Cowart. Do not assume the built-in image generation flow always writes a fresh file under `$CODEX_HOME/generated_images`.
+   Resolve the actual local output image carefully before inserting it into Yogurt AI. Do not assume the built-in image generation flow always writes a fresh file under `$CODEX_HOME/generated_images`.
 
    Preferred resolution order:
 
@@ -83,7 +83,7 @@ meta flag. Support both shapes.
    - If no new file path is returned, inspect the current Codex session JSONL for the current request and extract the PNG/base64 payload from the latest `image_generation_call.result`, then write it to a timestamped output filename.
    - Use `$CODEX_HOME/generated_images` only when you can prove the file was created by the current request, for example by matching its timestamp after this generation step. Never pick an older image merely because it is the newest file in a stale generated_images directory.
 
-   Before inserting the resolved file into Cowart, visually inspect the local bitmap and confirm it is the newly generated image for this request, not a stale generated asset.
+   Before inserting the resolved file into Yogurt AI, visually inspect the local bitmap and confirm it is the newly generated image for this request, not a stale generated asset.
 
    For project-bound output, copy the resolved generated image into the selected page's asset folder:
 
@@ -117,7 +117,7 @@ meta flag. Support both shapes.
 
 6. Delete the selected holder by default as part of replacement. In the standalone workflow, do not create a holder first unless the user explicitly asks for one.
 
-7. Save through Cowart MCP. Prefer `insert_cowart_image` for inserting the generated bitmap, or use `save_cowart_canvas_state` only when you must update the whole tldraw snapshot.
+7. Save through Yogurt AI MCP. Prefer `insert_cowart_image` for inserting the generated bitmap, or use `save_cowart_canvas_state` only when you must update the whole tldraw snapshot.
 
    Prefer page-local asset URLs in the image asset:
 
@@ -125,11 +125,11 @@ meta flag. Support both shapes.
    /page-assets/<page-id-without-page-prefix>/<filename>
    ```
 
-8. Let the Cowart widget refresh from MCP-backed storage, then confirm the inserted shape id, final dimensions, target aspect ratio, saved asset path, and replaced holder id when the holder replacement workflow was used.
+8. Let the Yogurt AI widget refresh from MCP-backed storage, then confirm the inserted shape id, final dimensions, target aspect ratio, saved asset path, and replaced holder id when the holder replacement workflow was used.
 
 ## Notes
 
 - If the holder is a legacy rotated `geo` rectangle, preserve the same `rotation` on the replacement image.
-- If there is already a generated image inside the holder from an older Cowart version, replacing the holder should remove the holder and its child image shape, then create one normal image shape in the holder's former position.
-- Do not refuse generation solely because no `AI 图片` holder is selected. Generate the bitmap and insert it into the current Cowart page.
+- If there is already a generated image inside the holder from an older Yogurt AI version, replacing the holder should remove the holder and its child image shape, then create one normal image shape in the holder's former position.
+- Do not refuse generation solely because no `AI 图片` holder is selected. Generate the bitmap and insert it into the current Yogurt AI page.
 - Never overwrite an existing asset file; use a timestamped filename.

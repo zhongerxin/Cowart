@@ -1,4 +1,4 @@
 interface:
-  display_name: "Cowart Image Edit"
+  display_name: "Yogurt AI Image Edit"
   short_description: "Generate revised images from annotated screenshots"
-  default_prompt: "Use $cowart:cowart-image-edit to generate revised AI images from the Cowart 批注 screenshots I provide and place each result beside its original."
+  default_prompt: "Use $cowart-thinking-canvas:cowart-image-edit to generate revised AI images from the Yogurt AI 批注 screenshots I provide and place each result beside its original."
