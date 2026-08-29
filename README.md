@@ -6,6 +6,12 @@ Cowart 是一个面向 Codex 的原生无限画布 widget 插件。它基于 tld
 
 English README: [README.en.md](README.en.md)
 
+## 体验网页版 Cowart
+
+**无需安装，直接开始。**
+
+在 Codex 内置浏览器中打开 [**cowart.jiqiren.ai**](https://cowart.jiqiren.ai/)，完成登录进入画布，然后开始你的创作。
+
 ## 功能
 
 - 在 Codex 中打开一个原生 tldraw 无限画布 widget；正常使用不再通过网页浏览器或 in-app browser 打开本地页面。

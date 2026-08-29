@@ -6,6 +6,12 @@ The repository also conforms to [Agent Plugins v1.0.0](https://agent-plugins.org
 
 中文说明: [README.md](README.md)
 
+## Try Cowart on the Web
+
+**No installation required—start creating right away.**
+
+Open [**cowart.jiqiren.ai**](https://cowart.jiqiren.ai/) in the Codex built-in browser, sign in to enter the canvas, and start creating.
+
 ## Features
 
 - Open a native tldraw infinite-canvas widget from Codex; normal use no longer opens a local page through a web browser or the in-app browser.
