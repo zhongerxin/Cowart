@@ -361,15 +361,18 @@ async function localizePageAsset(args, asset, pageId) {
   const sourceFilePath = dataUrl ? null : localAssetFilePathFromUrl(src, args);
   if (!dataUrl && !sourceFilePath) return localizedAsset;
 
-  const fileName = sanitizeAssetFileName(
+  const requestedFileName = sanitizeAssetFileName(
     dataUrl ? null : localizedAsset.props.name,
     sourceFilePath ? basename(sourceFilePath) : localizedAsset.id.replace(":", "-"),
     dataUrl?.mimeType ?? localizedAsset.props.mimeType,
   );
   const destinationDir = pageAssetsDir(args, pageId);
-  const destinationPath = join(destinationDir, fileName);
 
   await mkdir(destinationDir, { recursive: true });
+  const { fileName, filePath: destinationPath } = await uniqueAssetFilePath(
+    destinationDir,
+    requestedFileName,
+  );
   if (dataUrl) {
     await writeFile(destinationPath, dataUrl.buffer);
     localizedAsset.props.mimeType = localizedAsset.props.mimeType ?? dataUrl.mimeType;
@@ -385,12 +388,15 @@ async function localizePageAsset(args, asset, pageId) {
 }
 
 async function localizePageAssets(args, pageSnapshot, pageId) {
-  const entries = await Promise.all(
-    Object.entries(pageSnapshot.store).map(async ([id, record]) => {
-      if (record?.typeName !== "asset") return [id, record];
-      return [id, await localizePageAsset(args, record, pageId)];
-    }),
-  );
+  const entries = [];
+  for (const [id, record] of Object.entries(pageSnapshot.store)) {
+    entries.push([
+      id,
+      record?.typeName === "asset"
+        ? await localizePageAsset(args, record, pageId)
+        : record,
+    ]);
+  }
   return {
     ...pageSnapshot,
     store: Object.fromEntries(entries),

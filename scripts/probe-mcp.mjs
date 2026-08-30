@@ -32,6 +32,85 @@ let downloadedProbePath = null;
 let downloadedProbeDirectory = null;
 let projectDir = null;
 
+const probeSnapshotSchema = {
+  schemaVersion: 2,
+  sequences: {
+    "com.tldraw.store": 5,
+    "com.tldraw.asset": 1,
+    "com.tldraw.camera": 1,
+    "com.tldraw.document": 2,
+    "com.tldraw.instance": 26,
+    "com.tldraw.instance_page_state": 5,
+    "com.tldraw.page": 1,
+    "com.tldraw.instance_presence": 6,
+    "com.tldraw.pointer": 1,
+    "com.tldraw.shape": 4,
+    "com.tldraw.user": 1,
+    "com.tldraw.asset.image": 6,
+    "com.tldraw.asset.video": 5,
+    "com.tldraw.asset.bookmark": 2,
+    "com.tldraw.shape.arrow": 8,
+    "com.tldraw.shape.bookmark": 2,
+    "com.tldraw.shape.draw": 4,
+    "com.tldraw.shape.embed": 4,
+    "com.tldraw.shape.frame": 1,
+    "com.tldraw.shape.geo": 11,
+    "com.tldraw.shape.group": 0,
+    "com.tldraw.shape.highlight": 3,
+    "com.tldraw.shape.image": 5,
+    "com.tldraw.shape.line": 5,
+    "com.tldraw.shape.note": 12,
+    "com.tldraw.shape.text": 4,
+    "com.tldraw.shape.video": 4,
+    "com.tldraw.binding.arrow": 1,
+  },
+};
+
+function duplicateImageAsset(id, src, fileSize) {
+  return {
+    id,
+    typeName: "asset",
+    type: "image",
+    props: {
+      w: 1,
+      h: 1,
+      name: "duplicate.png",
+      isAnimated: false,
+      mimeType: "image/png",
+      src,
+      fileSize,
+    },
+    meta: {},
+  };
+}
+
+function duplicateImageShape(id, assetId, index, x) {
+  return {
+    id,
+    typeName: "shape",
+    type: "image",
+    x,
+    y: 0,
+    rotation: 0,
+    index,
+    parentId: "page:duplicate-assets",
+    isLocked: false,
+    opacity: 1,
+    props: {
+      w: 1,
+      h: 1,
+      playing: true,
+      url: "",
+      assetId,
+      crop: null,
+      flipX: false,
+      flipY: false,
+      altText: "",
+    },
+    meta: {},
+  };
+}
+
 function isCanvasDirectory(value) {
   const canvasDir = String(value || "");
   return (
@@ -122,6 +201,82 @@ try {
   }
   if ((stateResult.structuredContent?.hydratedAssets || []).length !== 0) {
     throw new Error("Cowart canvas state should not hydrate image assets by default.");
+  }
+
+  const duplicateSourceDir = path.join(projectDir, "canvas", "assets");
+  const firstDuplicateBytes = Buffer.from("first duplicate asset");
+  const secondDuplicateBytes = Buffer.from("second duplicate asset");
+  await mkdir(path.join(duplicateSourceDir, "first"), { recursive: true });
+  await mkdir(path.join(duplicateSourceDir, "second"), { recursive: true });
+  await writeFile(path.join(duplicateSourceDir, "first", "duplicate.png"), firstDuplicateBytes);
+  await writeFile(path.join(duplicateSourceDir, "second", "duplicate.png"), secondDuplicateBytes);
+
+  const duplicateAssetSnapshot = {
+    schema: probeSnapshotSchema,
+    store: {
+      "page:duplicate-assets": {
+        id: "page:duplicate-assets",
+        typeName: "page",
+        name: "Duplicate assets",
+        index: "a1",
+        meta: {},
+      },
+      "asset:duplicate-first": duplicateImageAsset(
+        "asset:duplicate-first",
+        "/assets/first/duplicate.png",
+        firstDuplicateBytes.length,
+      ),
+      "asset:duplicate-second": duplicateImageAsset(
+        "asset:duplicate-second",
+        "/assets/second/duplicate.png",
+        secondDuplicateBytes.length,
+      ),
+      "shape:duplicate-first": duplicateImageShape(
+        "shape:duplicate-first",
+        "asset:duplicate-first",
+        "a1",
+        0,
+      ),
+      "shape:duplicate-second": duplicateImageShape(
+        "shape:duplicate-second",
+        "asset:duplicate-second",
+        "a2",
+        2,
+      ),
+    },
+  };
+  const duplicateSaveResult = await client.callTool({
+    name: "save_cowart_canvas_state",
+    arguments: { projectDir, snapshot: duplicateAssetSnapshot },
+  });
+  if (duplicateSaveResult.isError || !duplicateSaveResult.structuredContent?.ok) {
+    throw new Error("Cowart could not save the duplicate-asset regression snapshot.");
+  }
+  const duplicateStateResult = await client.callTool({
+    name: "get_cowart_canvas_state",
+    arguments: { projectDir },
+  });
+  const duplicateStore = duplicateStateResult.structuredContent?.snapshot?.store;
+  const firstAssetUrl = duplicateStore?.["asset:duplicate-first"]?.props?.src;
+  const secondAssetUrl = duplicateStore?.["asset:duplicate-second"]?.props?.src;
+  if (!firstAssetUrl || !secondAssetUrl || firstAssetUrl === secondAssetUrl) {
+    throw new Error("Cowart page asset localization did not preserve distinct same-named assets.");
+  }
+  const [firstAssetResult, secondAssetResult] = await Promise.all([
+    client.callTool({
+      name: "read_cowart_page_asset",
+      arguments: { projectDir, assetUrl: firstAssetUrl },
+    }),
+    client.callTool({
+      name: "read_cowart_page_asset",
+      arguments: { projectDir, assetUrl: secondAssetUrl },
+    }),
+  ]);
+  if (
+    !Buffer.from(firstAssetResult.structuredContent?.dataBase64 || "", "base64").equals(firstDuplicateBytes) ||
+    !Buffer.from(secondAssetResult.structuredContent?.dataBase64 || "", "base64").equals(secondDuplicateBytes)
+  ) {
+    throw new Error("Cowart page asset localization overwrote one of the same-named assets.");
   }
 
   const probePageAssetDir = path.join(projectDir, "canvas", "pages", "probe-page", "assets");
