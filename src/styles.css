@@ -809,6 +809,135 @@ body {
   border-radius: 4px;
 }
 
+.cowart-image-preset {
+  position: absolute;
+  /* Sit below tldraw's top-left menu zone (~42px tall) to avoid overlap. */
+  top: 50px;
+  left: 8px;
+  z-index: 300;
+  color: #1f2430;
+  pointer-events: auto;
+}
+
+.cowart-image-preset-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  color: #1f2430;
+  background: rgb(255 255 255 / 96%);
+  border: 1px solid #d5dbe5;
+  border-radius: 12px;
+  box-shadow:
+    0 12px 30px rgb(15 23 42 / 10%),
+    inset 0 1px 0 rgb(255 255 255 / 85%);
+  cursor: pointer;
+  backdrop-filter: blur(18px) saturate(1.08);
+}
+
+.cowart-image-preset-toggle:hover {
+  border-color: #b9c2d0;
+}
+
+.cowart-image-preset-toggle-inner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cowart-image-preset--expanded {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(300px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  padding: 14px;
+  background: rgb(255 255 255 / 96%);
+  border: 1px solid #d5dbe5;
+  border-radius: 16px;
+  box-shadow:
+    0 30px 74px rgb(15 23 42 / 10%),
+    0 10px 30px rgb(15 23 42 / 8%),
+    inset 0 1px 0 rgb(255 255 255 / 85%);
+  backdrop-filter: blur(18px) saturate(1.08);
+}
+
+.cowart-image-preset-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cowart-image-preset-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.cowart-image-preset-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  color: #566072;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.cowart-image-preset-close:hover {
+  background: rgb(15 23 42 / 6%);
+}
+
+.cowart-image-preset-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cowart-image-preset-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cowart-image-preset-field-label {
+  font-size: 12px;
+  color: #566072;
+}
+
+.cowart-image-preset-select {
+  width: 100%;
+  height: 32px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 13px;
+  color: #1f2430;
+  background: #fff;
+  border: 1px solid #d5dbe5;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.cowart-image-preset-select:disabled {
+  color: #98a2b3;
+  cursor: not-allowed;
+  background: #f3f5f8;
+}
+
+.cowart-image-preset-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #7a8496;
+}
+
 .cowart-ai-generation-overlay {
   position: absolute;
   inset: 0;

@@ -11,6 +11,7 @@ const TOOL_READ_PAGE_ASSET = 'read_cowart_page_asset'
 const TOOL_DOWNLOAD_FILE = 'download_cowart_file'
 const TOOL_COPY_IMAGE_TO_CLIPBOARD = 'copy_cowart_image_to_clipboard'
 const TOOL_INSERT_HTML_DRAFT = 'insert_cowart_html_draft'
+const TOOL_GET_MEDIA_CAPABILITIES = 'get_cowart_media_capabilities'
 const WIDGET_PAYLOAD_TIMEOUT_MS = 5000
 
 globalThis.__COWART_WIDGET_FETCH_GUARD__ = true
@@ -227,6 +228,27 @@ export async function updateCowartHtmlDraft({ draftShapeId, htmlContent }) {
     htmlContent,
     updateExistingDraft: true
   })
+}
+
+/**
+ * Load the host's image-generation capability matrix (model groups and their
+ * supported aspect ratios / resolutions / qualities / image modes) for the
+ * preset panel. Returns null when no bridge is present or the host reports the
+ * capabilities are unavailable (e.g. not logged in), so the caller can fall
+ * back to built-in defaults.
+ */
+export async function loadCowartMediaCapabilities(options = {}) {
+  if (!hasCowartWidgetBridge()) return null
+  try {
+    const result = await callCowartServerTool(TOOL_GET_MEDIA_CAPABILITIES, {}, options)
+    const image = result?.image
+    if (!image || typeof image !== 'object') return null
+    return image
+  } catch (error) {
+    if (options.signal?.aborted) throw error
+    console.warn('Cowart media capabilities could not be loaded.', error)
+    return null
+  }
 }
 
 export async function readCowartPageAsset(assetUrl, options = {}) {

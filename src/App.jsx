@@ -61,7 +61,7 @@ import {
 import { getAssetUrlsByImport } from '@tldraw/assets/imports.vite'
 import { AllSelection } from '@tiptap/pm/state'
 import html2canvas from 'html2canvas'
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Download, FileCode, Image as ImageIcon, Play, X } from 'lucide-react'
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Download, FileCode, Image as ImageIcon, Play, Settings2, X } from 'lucide-react'
 import 'tldraw/tldraw.css'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import aiHtmlToolIconRaw from './assets/ai-html.svg?raw'
@@ -79,6 +79,7 @@ import {
   downloadCowartFile,
   hasCowartWidgetBridge,
   loadCowartCanvasState,
+  loadCowartMediaCapabilities,
   readCowartPageAsset,
   refreshCowartCanvasSnapshot,
   saveCowartCanvasSnapshot,
@@ -136,6 +137,81 @@ const AI_IMAGE_ASPECT_PRESETS = [
   { id: '16-9', label: '16:9', w: 1024, h: 576 },
   { id: '9-16', label: '9:16', w: 512, h: 910 }
 ]
+// Sentinel used by preset selects to mean "let the host/backend pick a default".
+const AI_IMAGE_PRESET_AUTO = '__auto__'
+const AI_IMAGE_PRESET_FIELDS = ['displayName', 'aspectRatio', 'resolution', 'quality', 'imageMode']
+
+/**
+ * Module-level store for the image-generation preset the user picks in the
+ * top-left panel. Kept outside React so the preset panel, the generation panel,
+ * and the view-state persistence loop can all read/write one source of truth
+ * without threading context through the whole tree.
+ */
+const cowartImagePresetStore = (() => {
+  let preset = {}
+  let capabilities = null
+  const listeners = new Set()
+  const emit = () => {
+    for (const listener of listeners) listener()
+  }
+  return {
+    getPreset: () => preset,
+    getCapabilities: () => capabilities,
+    subscribe(listener) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    setCapabilities(next) {
+      capabilities = next && typeof next === 'object' ? next : null
+      emit()
+    },
+    /** Replace the whole preset (used when hydrating from persisted view-state). */
+    hydrate(next) {
+      preset = sanitizeImagePreset(next)
+      emit()
+    },
+    /** Update a single field; `AI_IMAGE_PRESET_AUTO`/empty clears it. */
+    setField(field, value) {
+      if (!AI_IMAGE_PRESET_FIELDS.includes(field)) return
+      const next = { ...preset }
+      if (!value || value === AI_IMAGE_PRESET_AUTO) delete next[field]
+      else next[field] = String(value)
+      preset = next
+      emit()
+    }
+  }
+})()
+
+function sanitizeImagePreset(value) {
+  if (!value || typeof value !== 'object') return {}
+  const result = {}
+  for (const field of AI_IMAGE_PRESET_FIELDS) {
+    const raw = value[field]
+    if (typeof raw === 'string' && raw.trim() && raw !== AI_IMAGE_PRESET_AUTO) {
+      result[field] = raw.trim()
+    }
+  }
+  return result
+}
+
+/** Subscribe a component to the preset store; returns { preset, capabilities }. */
+function useCowartImagePreset() {
+  const [state, setState] = useState(() => ({
+    preset: cowartImagePresetStore.getPreset(),
+    capabilities: cowartImagePresetStore.getCapabilities()
+  }))
+  useEffect(() => {
+    const update = () =>
+      setState({
+        preset: cowartImagePresetStore.getPreset(),
+        capabilities: cowartImagePresetStore.getCapabilities()
+      })
+    update()
+    return cowartImagePresetStore.subscribe(update)
+  }, [])
+  return state
+}
+
 const ANNOTATION_TOOL_ID = 'cowart-annotation'
 const ANNOTATION_TOOL_LABEL = '标注'
 const ANNOTATION_DEFAULT_COLOR = 'red'
@@ -2744,14 +2820,18 @@ async function sendAiImageGenerationRequest({ holderShape, userPrompt, reference
     }
   }
 
-  return sender(
-    { prompt, content },
-    {
-      promptType: 'ai_image',
-      aiType: 'image',
-      hasReference: imageReferences.length > 0
-    }
-  )
+  // Attach the user's selected generation preset as a structured side-channel.
+  // The host sanitizes it and forwards recognized fields to the media task; the
+  // prompt text still carries the aspect ratio for backward compatibility.
+  const preset = sanitizeImagePreset(cowartImagePresetStore.getPreset())
+  const message = { prompt, content }
+  if (Object.keys(preset).length > 0) message.context = { preset }
+
+  return sender(message, {
+    promptType: 'ai_image',
+    aiType: 'image',
+    hasReference: imageReferences.length > 0
+  })
 }
 
 async function sendAiDraftGenerationRequest({ holderShape, userPrompt, referenceFiles = [] }) {
@@ -3454,11 +3534,153 @@ const cowartComponents = {
 function CowartCanvasOverlay() {
   return (
     <>
+      <CowartImagePresetPanel />
       <CowartAiImageGenerationPanel />
       <CowartAiDraftGenerationPanel />
       <CowartAiSlidesGenerationPanel />
       <CowartSlidesPresentationOverlay />
     </>
+  )
+}
+
+/** Build the option list for a preset select, always leading with an "auto" entry. */
+function buildPresetOptions(values, autoLabel) {
+  const options = [{ value: AI_IMAGE_PRESET_AUTO, label: autoLabel }]
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) options.push({ value, label: value })
+  }
+  return options
+}
+
+function CowartImagePresetSelect({ label, field, value, options, disabled }) {
+  const selectId = `cowart-image-preset-${field}`
+  return (
+    <label className="cowart-image-preset-field" htmlFor={selectId}>
+      <span className="cowart-image-preset-field-label">{label}</span>
+      <select
+        id={selectId}
+        className="cowart-image-preset-select"
+        value={value || AI_IMAGE_PRESET_AUTO}
+        disabled={disabled}
+        onPointerDown={stopEditorOverlayEvent}
+        onChange={(event) => cowartImagePresetStore.setField(field, event.target.value)}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
+/**
+ * Top-left preset panel. Collapsed by default (a single settings icon); expands
+ * to let the user choose the image-generation parameters (model group, aspect
+ * ratio, resolution, quality, image mode). Options come from the host capability
+ * matrix; when it is unavailable the panel shows built-in aspect-ratio presets
+ * only. The chosen preset is applied to canvas image-generation requests.
+ */
+function CowartImagePresetPanel() {
+  const [expanded, setExpanded] = useState(false)
+  const { preset, capabilities } = useCowartImagePreset()
+
+  const models = Array.isArray(capabilities?.models) ? capabilities.models : []
+  const selectedModel = models.find((model) => model.displayName === preset.displayName) || null
+  // When a model group is selected, constrain the other options to that model's
+  // matrix; otherwise offer the union the host reported.
+  const aspectRatios = selectedModel?.aspectRatios?.length
+    ? selectedModel.aspectRatios
+    : capabilities?.aspectRatios || AI_IMAGE_ASPECT_PRESETS.map((entry) => entry.label)
+  const resolutions = selectedModel?.resolutions?.length ? selectedModel.resolutions : capabilities?.resolutions || []
+  const qualities = selectedModel?.qualities?.length ? selectedModel.qualities : capabilities?.qualities || []
+  const imageModes = selectedModel?.imageModes || []
+
+  if (!expanded) {
+    return (
+      <div className="cowart-image-preset cowart-image-preset--collapsed">
+        <button
+          type="button"
+          className="cowart-image-preset-toggle"
+          title="生图预设"
+          aria-label="生图预设"
+          aria-expanded="false"
+          onPointerDown={stopEditorOverlayEvent}
+          onClick={() => setExpanded(true)}
+        >
+          <span className="cowart-image-preset-toggle-inner">
+            <Settings2 size={18} aria-hidden="true" />
+          </span>
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <section
+      className="cowart-image-preset cowart-image-preset--expanded"
+      aria-label="生图预设"
+      onPointerDown={stopEditorOverlayEvent}
+    >
+      <header className="cowart-image-preset-header">
+        <span className="cowart-image-preset-title">生图预设</span>
+        <button
+          type="button"
+          className="cowart-image-preset-close"
+          title="收起"
+          aria-label="收起"
+          onClick={() => setExpanded(false)}
+        >
+          <X size={16} aria-hidden="true" />
+        </button>
+      </header>
+      <div className="cowart-image-preset-body">
+        <CowartImagePresetSelect
+          label="模型"
+          field="displayName"
+          value={preset.displayName}
+          options={buildPresetOptions(
+            models.map((model) => model.displayName),
+            '默认'
+          )}
+          disabled={models.length === 0}
+        />
+        <CowartImagePresetSelect
+          label="图片尺寸"
+          field="resolution"
+          value={preset.resolution}
+          options={buildPresetOptions(resolutions, '默认')}
+          disabled={resolutions.length === 0}
+        />
+        <CowartImagePresetSelect
+          label="纵横比"
+          field="aspectRatio"
+          value={preset.aspectRatio}
+          options={buildPresetOptions(aspectRatios, '自动')}
+          disabled={aspectRatios.length === 0}
+        />
+        <CowartImagePresetSelect
+          label="质量"
+          field="quality"
+          value={preset.quality}
+          options={buildPresetOptions(qualities, '默认')}
+          disabled={qualities.length === 0}
+        />
+        {imageModes.length > 0 ? (
+          <CowartImagePresetSelect
+            label="模式"
+            field="imageMode"
+            value={preset.imageMode}
+            options={buildPresetOptions(imageModes, '默认')}
+            disabled={false}
+          />
+        ) : null}
+      </div>
+      <p className="cowart-image-preset-hint">
+        {capabilities ? '在画布中发起的生图任务将使用以上参数。' : '未获取到可选参数，将使用默认生图设置。'}
+      </p>
+    </section>
   )
 }
 
@@ -5869,6 +6091,8 @@ export default function App() {
         setSnapshot(sanitized.snapshot)
         setSkippedRecords(sanitized.skippedRecords)
         setViewState(canvasState.viewState ?? null)
+        // Hydrate the image-generation preset persisted alongside the view state.
+        cowartImagePresetStore.hydrate(canvasState.viewState?.imagePreset)
       } catch (error) {
         if (error.name === 'AbortError') return
         setLoadError(error)
@@ -5878,6 +6102,14 @@ export default function App() {
     }
 
     loadCanvas()
+
+    // Load the host capability matrix for the preset panel; failure is non-fatal
+    // (the panel falls back to built-in aspect presets).
+    void loadCowartMediaCapabilities({ signal: controller.signal })
+      .then((capabilities) => cowartImagePresetStore.setCapabilities(capabilities))
+      .catch((error) => {
+        if (error?.name !== 'AbortError') console.warn('Cowart media capabilities load failed.', error)
+      })
 
     return () => controller.abort()
   }, [])
@@ -5932,14 +6164,18 @@ export default function App() {
     const selectionStateTimer = window.setInterval(syncSelectionState, 250)
 
     async function syncViewState() {
+      const imagePreset = sanitizeImagePreset(cowartImagePresetStore.getPreset())
       const viewStateSnapshot = {
         ...getCowartViewState(editor),
+        ...(Object.keys(imagePreset).length > 0 ? { imagePreset } : {}),
         updatedAt: new Date().toISOString()
       }
 
-      const nextViewState = JSON.stringify(viewStateSnapshot)
-      if (nextViewState === lastSyncedViewState) return
-      lastSyncedViewState = nextViewState
+      // Exclude the timestamp when deciding whether persisted state changed, so
+      // an unchanged camera + preset does not write on every tick.
+      const comparableViewState = JSON.stringify({ ...viewStateSnapshot, updatedAt: null })
+      if (comparableViewState === lastSyncedViewState) return
+      lastSyncedViewState = comparableViewState
 
       if (isViewStateSaving) {
         hasPendingViewState = true
