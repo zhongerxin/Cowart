@@ -294,15 +294,18 @@ async function localizePageAsset(asset, pageId) {
   const sourceFilePath = dataUrl ? null : localAssetFilePathFromUrl(src)
   if (!dataUrl && !sourceFilePath) return localizedAsset
 
-  const fileName = sanitizeAssetFileName(
+  const requestedFileName = sanitizeAssetFileName(
     dataUrl ? null : localizedAsset.props.name,
     sourceFilePath ? basename(sourceFilePath) : localizedAsset.id.replace(':', '-'),
     dataUrl?.mimeType ?? localizedAsset.props.mimeType
   )
   const destinationDir = pageAssetsDir(pageId)
-  const destinationPath = join(destinationDir, fileName)
 
   await mkdir(destinationDir, { recursive: true })
+  const { fileName, filePath: destinationPath } = await uniquePageAssetTarget(
+    pageId,
+    requestedFileName
+  )
   if (dataUrl) {
     await writeFile(destinationPath, dataUrl.buffer)
     localizedAsset.props.mimeType = localizedAsset.props.mimeType ?? dataUrl.mimeType
@@ -431,12 +434,15 @@ async function persistHtmlDraftAsset(record, pageId) {
 }
 
 async function localizePageAssets(pageSnapshot, pageId) {
-  const entries = await Promise.all(
-    Object.entries(pageSnapshot.store).map(async ([id, record]) => {
-      if (record?.typeName === 'asset') return [id, await localizePageAsset(record, pageId)]
-      return [id, await persistHtmlDraftAsset(record, pageId)]
-    })
-  )
+  const entries = []
+  for (const [id, record] of Object.entries(pageSnapshot.store)) {
+    entries.push([
+      id,
+      record?.typeName === 'asset'
+        ? await localizePageAsset(record, pageId)
+        : await persistHtmlDraftAsset(record, pageId)
+    ])
+  }
   return {
     ...pageSnapshot,
     store: Object.fromEntries(entries)
