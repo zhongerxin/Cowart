@@ -7,6 +7,8 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import { Store } from '@tldraw/store'
+import { AssetRecordType, createShapeId, createTLSchema } from '@tldraw/tlschema'
 import { withCowartCanvasTransaction } from '../mcp/lib/canvas-storage.mjs'
 
 // Synthetic temporary fixtures only. Exercise the same MCP protocol as the
@@ -167,6 +169,202 @@ try {
   } finally {
     if (browserWindow === undefined) delete globalThis.window
     else globalThis.window = browserWindow
+  }
+
+  // Immediate generation saves must recognize the same user deletion as the
+  // later autosave. Use tldraw's real synchronous side effects and deferred
+  // document listener, rather than manually supplying deletion confirmations.
+  const saveWindow = globalThis.window
+  const previousAnimationFrame = globalThis.requestAnimationFrame
+  const previousCancelAnimationFrame = globalThis.cancelAnimationFrame
+  const frameTimers = new Set()
+  const delayedTools = new Map()
+  const toolDelays = new Set()
+  const delayNextTool = (name) => {
+    let start, release
+    const started = new Promise((resolveStart) => { start = resolveStart })
+    const waiting = new Promise((resolveDelay) => { release = resolveDelay })
+    const delay = { started, waiting, release, start, request: null }
+    delayedTools.set(name, delay)
+    toolDelays.add(delay)
+    return delay
+  }
+  let saveSession, saveStore
+  try {
+    globalThis.requestAnimationFrame = (callback) => {
+      const timer = setTimeout(() => { frameTimers.delete(timer); callback(performance.now()) }, 16)
+      frameTimers.add(timer)
+      return timer
+    }
+    globalThis.cancelAnimationFrame = (timer) => { clearTimeout(timer); frameTimers.delete(timer) }
+    const saveInitial = await call(first, 'get_cowart_canvas_state')
+    globalThis.window = {
+      devicePixelRatio: 1,
+      openai: { toolOutput: { ...args, canvasState: saveInitial } },
+      cowartMcp: { async callServerTool(request) {
+        const delay = delayedTools.get(request.name)
+        if (delay) {
+          delayedTools.delete(request.name)
+          delay.request = structuredClone(request)
+          delay.start()
+          await delay.waiting
+        }
+        return first.callTool(request)
+      } },
+    }
+    const frontend = await import('../src/cowartClient.js')
+    const { attachCowartCanvasSaveSession, saveCowartEditorSnapshot } = await import('../src/cowartCanvasSave.js')
+    await frontend.loadCowartCanvasState()
+    // Use the same tldraw record store/schema without importing React's UI
+    // scheduler, whose MessageChannel keeps a standalone Node probe alive.
+    const store = new Store({ schema: createTLSchema() })
+    saveStore = store
+    store.loadStoreSnapshot(saveInitial.snapshot)
+    const editor = { store, sideEffects: store.sideEffects }
+    saveSession = attachCowartCanvasSaveSession(editor)
+    assert.equal(attachCowartCanvasSaveSession(editor), saveSession, 'An editor must reuse one deletion session')
+    const reloadEditor = async () => {
+      const snapshot = await frontend.refreshCowartCanvasSnapshot()
+      store.loadStoreSnapshot(snapshot)
+      frontend.acceptCowartCanvasSnapshot(snapshot)
+      saveSession.reset()
+      return snapshot
+    }
+    const addImage = (name) => {
+      const assetId = AssetRecordType.createId(`integrity-${name}`)
+      const shapeId = createShapeId(`integrity-${name}`)
+      const asset = AssetRecordType.create({
+        id: assetId, type: 'image', props: {
+          w: 16, h: 16, name: `${name}.svg`, isAnimated: false, mimeType: 'image/svg+xml',
+          src: `data:image/svg+xml;base64,${Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16"/></svg>').toString('base64')}`,
+        },
+      })
+      const shape = store.schema.types.shape.create({
+        id: shapeId, type: 'image', parentId: pageId, index: 'a1',
+        props: { w: 16, h: 16, playing: false, url: '', assetId, crop: null, flipX: false, flipY: false, altText: '' },
+      })
+      store.put([asset, shape])
+      return shapeId
+    }
+    const removedImage = addImage('immediate-delete')
+    const keptImage = addImage('retained-image')
+    assert.equal((await saveCowartEditorSnapshot(editor)).ok, true)
+    await reloadEditor()
+    assert.match(store.get(keptImage).props.assetId, /^asset:/)
+    assert.match(store.get(store.get(keptImage).props.assetId).props.src, /^\/page-assets\//, 'Deletion guards must use saved, recoverable image payloads')
+    let deletionListenerRan = false
+    const removeListener = store.listen(({ changes }) => {
+      if (changes.removed[removedImage]) deletionListenerRan = true
+    }, { source: 'user', scope: 'document' })
+    store.remove([removedImage])
+    assert.equal(deletionListenerRan, false, 'Immediate saves run before the deferred document listener')
+    assert.equal((await saveCowartEditorSnapshot(editor)).ok, true, 'A user deletion must save without a history flush or autosave delay')
+    removeListener()
+    let imageState = await call(second, 'get_cowart_canvas_state')
+    assert.equal(imageState.snapshot.store[removedImage], undefined)
+    assert.ok(imageState.snapshot.store[keptImage], 'A confirmed deletion must retain unrelated images')
+
+    const keptRecord = store.get(keptImage)
+    store.mergeRemoteChanges(() => store.remove([keptImage]))
+    await assert.rejects(saveCowartEditorSnapshot(editor), (error) => error.storage === 'blocked-destructive-image-loss', 'Remote image loss must remain protected')
+    imageState = await call(second, 'get_cowart_canvas_state')
+    assert.ok(imageState.snapshot.store[keptImage], 'Refusing a destructive save must preserve the saved image')
+    store.mergeRemoteChanges(() => store.put([keptRecord]))
+
+    // A stale write must retain user intent for the retry after reconciliation.
+    store.remove([keptImage])
+    const concurrentDraft = await call(second, 'insert_cowart_html_draft', { pageId, fileName: 'during-delete.html', htmlContent: '<html>keep concurrent insertion during deletion</html>' })
+    await assert.rejects(saveCowartEditorSnapshot(editor), (error) => error.storage === 'revision-conflict')
+    const retrySnapshot = await frontend.refreshCowartCanvasSnapshot()
+    store.mergeRemoteChanges(() => store.put(Object.values(retrySnapshot.store).filter((record) => record.id !== keptImage)))
+    frontend.acceptCowartCanvasSnapshot(retrySnapshot)
+    assert.equal((await saveCowartEditorSnapshot(editor)).ok, true, 'A failed save must not consume the pending user deletion')
+    imageState = await call(second, 'get_cowart_canvas_state')
+    assert.equal(imageState.snapshot.store[keptImage], undefined)
+    assert.ok(imageState.snapshot.store[concurrentDraft.shapeId])
+
+    const restoredImage = addImage('undo-delete')
+    assert.equal((await saveCowartEditorSnapshot(editor)).ok, true)
+    await reloadEditor()
+    const restoredRecord = store.get(restoredImage)
+    store.remove([restoredImage])
+    store.put([restoredRecord])
+    store.mergeRemoteChanges(() => store.remove([restoredImage]))
+    await assert.rejects(saveCowartEditorSnapshot(editor), (error) => error.storage === 'blocked-destructive-image-loss', 'Undo must revoke the old deletion before a later remote loss')
+    store.mergeRemoteChanges(() => store.put([restoredRecord]))
+    store.remove([restoredImage])
+    saveSession.reset()
+    await assert.rejects(saveCowartEditorSnapshot(editor), (error) => error.storage === 'blocked-destructive-image-loss', 'Loading a new authoritative state must clear old deletion evidence')
+    store.mergeRemoteChanges(() => store.put([restoredRecord]))
+
+    const duringWriteImage = addImage('during-write')
+    assert.equal((await saveCowartEditorSnapshot(editor)).ok, true)
+    await reloadEditor()
+    const saveDelay = delayNextTool('save_cowart_canvas_state')
+    const inFlight = saveCowartEditorSnapshot(editor)
+    await saveDelay.started
+    assert.ok(saveDelay.request.arguments.snapshot.store[duringWriteImage], 'The first in-flight save captured the image')
+    store.remove([duringWriteImage])
+    const queuedDelete = saveCowartEditorSnapshot(editor)
+    saveDelay.release()
+    assert.equal((await inFlight).ok, true)
+    assert.equal((await queuedDelete).ok, true, 'A deletion during an in-flight save must remain authorized for the next queued save')
+    imageState = await call(second, 'get_cowart_canvas_state')
+    assert.equal(imageState.snapshot.store[duringWriteImage], undefined)
+    assert.ok(imageState.snapshot.store[restoredImage])
+
+    const queuedImage = addImage('behind-html-write')
+    assert.equal((await saveCowartEditorSnapshot(editor)).ok, true)
+    await reloadEditor()
+    const htmlDelay = delayNextTool('insert_cowart_html_draft')
+    const editing = frontend.updateCowartHtmlDraft({ draftShapeId: editable.shapeId, htmlContent: '<html><body>latest queued HTML</body></html>' }, {
+      applyResult(result) {
+        const record = store.get(editable.shapeId)
+        store.mergeRemoteChanges(() => store.put([{
+          ...record, meta: { ...record.meta, cowartHtmlDraftAssetUrl: result.assetUrl, cowartHtmlDraftContentHash: result.contentHash },
+          props: { ...record.props, url: result.virtualUrl },
+        }]))
+        return true
+      },
+    })
+    await htmlDelay.started
+    const afterHtml = saveCowartEditorSnapshot(editor)
+    store.remove([queuedImage])
+    store.put([{ ...store.get(editable.shapeId), x: 456 }])
+    htmlDelay.release()
+    const latestHtml = await editing
+    assert.equal((await afterHtml).ok, true, 'A queued save must capture deletions made while the earlier HTML write is pending')
+    imageState = await call(second, 'get_cowart_canvas_state')
+    assert.equal(imageState.snapshot.store[queuedImage], undefined)
+    assert.ok(imageState.snapshot.store[restoredImage], 'Queued HTML edits must preserve older unrelated images')
+    assert.equal(imageState.snapshot.store[editable.shapeId].meta.cowartHtmlDraftContentHash, latestHtml.contentHash)
+    assert.equal(imageState.snapshot.store[editable.shapeId].props.url, latestHtml.virtualUrl)
+    assert.equal(imageState.snapshot.store[editable.shapeId].x, 456, 'Lazy capture must retain local edits made while queued')
+    assert.equal(await readFile(editable.assetFile, 'utf8'), '<html><body>latest queued HTML</body></html>')
+
+    const closingDelay = delayNextTool('save_cowart_canvas_state')
+    const beforeClosing = saveSession.save()
+    await closingDelay.started
+    store.remove([restoredImage])
+    saveSession.dispose()
+    const finalSave = saveSession.save()
+    closingDelay.release()
+    assert.equal((await beforeClosing).ok, true)
+    assert.equal((await finalSave).ok, true, 'A final autosave after unmount must retain confirmations from its disposed session')
+    imageState = await call(second, 'get_cowart_canvas_state')
+    assert.equal(imageState.snapshot.store[restoredImage], undefined)
+    console.log('OK: immediate user image deletion saves before deferred listeners; remote loss remains blocked; failed writes retain confirmations; undo/reset revoke them; queued/in-flight/final saves retain new deletions and latest HTML.')
+  } finally {
+    saveSession?.dispose()
+    saveStore?.dispose()
+    for (const delay of toolDelays) delay.release()
+    for (const timer of frameTimers) clearTimeout(timer)
+    if (previousAnimationFrame === undefined) delete globalThis.requestAnimationFrame
+    else globalThis.requestAnimationFrame = previousAnimationFrame
+    if (previousCancelAnimationFrame === undefined) delete globalThis.cancelAnimationFrame
+    else globalThis.cancelAnimationFrame = previousCancelAnimationFrame
+    if (saveWindow === undefined) delete globalThis.window
+    else globalThis.window = saveWindow
   }
 
   // A saved HTML document can contain megabytes of embedded image data. Keep

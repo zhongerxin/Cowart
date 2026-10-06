@@ -89,14 +89,16 @@ function fixture() {
     saveCowartViewState: (snapshot) => { calls.view.push(snapshot); return state.saveView(snapshot) },
     refreshCowartCanvasSnapshot: (signal) => { calls.refresh.push(signal); return state.refresh(signal) },
     acceptCowartCanvasSnapshot: (snapshot) => calls.accepted.push(snapshot),
-    saveCowartCanvasSnapshot: (snapshot) => {
-      const savingSnapshot = typeof snapshot === 'function' ? snapshot() : snapshot
-      calls.canvas.push(savingSnapshot)
-      return state.saveCanvas(savingSnapshot)
-    },
+    attachCowartCanvasSaveSession: (savingEditor) => ({
+      reset: noOp, dispose: noOp,
+      save() {
+        const savingSnapshot = savingEditor.store.getStoreSnapshot()
+        calls.canvas.push(savingSnapshot)
+        return state.saveCanvas(savingSnapshot)
+      }
+    }),
     downloadCowartFile: (download) => { calls.downloads.push(download); return state.download(download) },
     sanitizeCanvasSnapshotForTldraw: (snapshot) => ({ snapshot, skippedRecords: [] }),
-    collectRemovedImageShapeIds: () => [],
     applyRemoteCanvasSnapshot: (_editor, snapshot) => { calls.applied.push(snapshot); return state.applyRemote(snapshot) },
     storeChangedSinceSnapshot, hasCowartWidgetBridge: () => true,
     retainCowartEditorAssets: noOp, cowartAssetReferencesChanged: () => false,

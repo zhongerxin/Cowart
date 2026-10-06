@@ -93,12 +93,12 @@ import {
   loadCowartCanvasState,
   readCowartPageAsset,
   refreshCowartCanvasSnapshot,
-  saveCowartCanvasSnapshot,
   saveCowartReferenceImage,
   saveCowartSelectionState,
   saveCowartViewState,
   updateCowartHtmlDraft
 } from './cowartClient.js'
+import { attachCowartCanvasSaveSession, saveCowartEditorSnapshot } from './cowartCanvasSave.js'
 import {
   describeSkippedRecord,
   isCanvasSnapshot,
@@ -591,22 +591,6 @@ function isCowartHtmlDraftEmbedShape(shape) {
 
 function isImageShape(shape) {
   return shape?.type === 'image'
-}
-
-function isImageShapeRecord(record) {
-  return record?.typeName === 'shape' && record.type === 'image'
-}
-
-function recordValues(records) {
-  return Object.values(records || {})
-}
-
-function collectRemovedImageShapeIds(changes) {
-  const imageShapeIds = []
-  for (const removedRecord of recordValues(changes?.removed)) {
-    if (isImageShapeRecord(removedRecord)) imageShapeIds.push(removedRecord.id)
-  }
-  return imageShapeIds
 }
 
 function isAiImageAspectLocked(shape) {
@@ -2404,9 +2388,7 @@ async function sendAiSlidesAnnotationEditRequest(editor, slidesShapeId) {
   const targetSlidesShapeId = createAiSlidesBelowSource(editor, sourceSlidesShape)
 
   try {
-    const saveResult = await saveCowartCanvasSnapshot(editor.store.getStoreSnapshot(), {
-      protectImageRecords: true
-    })
+    const saveResult = await saveCowartEditorSnapshot(editor)
     if (saveResult?.ok === false) throw new Error(saveResult.message || '新的 AI Slides 保存失败。')
 
     const prompt = buildAiSlidesAnnotationEditPrompt({
@@ -2440,7 +2422,7 @@ async function sendAiSlidesAnnotationEditRequest(editor, slidesShapeId) {
     )
   } catch (error) {
     editor.deleteShapes([targetSlidesShapeId])
-    await saveCowartCanvasSnapshot(editor.store.getStoreSnapshot(), { protectImageRecords: true })
+    await saveCowartEditorSnapshot(editor)
     throw error
   }
 }
@@ -4427,7 +4409,7 @@ function CowartAiDraftGenerationPanel() {
     setStatus('sending')
     setErrorMessage('')
     try {
-      const saved = await saveCowartCanvasSnapshot(editor.store.getStoreSnapshot(), { protectImageRecords: true })
+      const saved = await saveCowartEditorSnapshot(editor)
       if (saved?.ok === false) throw new Error(saved.message || '画布保存失败。')
       await saveCowartSelectionState(getCowartSelectionSnapshot(editor))
       await sendAiDraftGenerationRequest({
@@ -6178,6 +6160,7 @@ export default function App() {
     window.__cowartSelection = () => getCowartSelection(editor)
     window.__cowartViewState = () => getCowartViewState(editor)
     let isDisposed = false
+    const canvasSaveSession = attachCowartCanvasSaveSession(editor)
     let lastWrittenSelectionState = ''
     let lastSyncedSelectionState = ''
     let lastSelectionRecords = null
@@ -6321,7 +6304,6 @@ export default function App() {
     let isSyncingAnnotationShape = false
     let remoteLoadController = null
     let lastAppliedRemoteSnapshot = null
-    const acknowledgedImageShapeDeletes = new Set()
 
     function showSaveConflict() {
       if (conflictNotice || isDisposed) return
@@ -6401,7 +6383,7 @@ export default function App() {
           lastAppliedRemoteSnapshot = nextSnapshot
           hasUnsavedChanges = false
           hasPendingSave = false
-          acknowledgedImageShapeDeletes.clear()
+          canvasSaveSession.reset()
           saveConflict = false
           conflictNotice?.remove()
           conflictNotice = null
@@ -6428,17 +6410,10 @@ export default function App() {
 
       isSaving = true
       const savingVersion = documentChangeVersion
-      const acknowledgedDeletesInSave = new Set(acknowledgedImageShapeDeletes)
       try {
-        const saveResult = await saveCowartCanvasSnapshot(() => editor.store.getStoreSnapshot(), {
-          protectImageRecords: true,
-          acknowledgedImageShapeDeletes: Array.from(acknowledgedImageShapeDeletes)
-        })
+        const saveResult = await canvasSaveSession.save()
         if (saveResult?.ok === false) {
           throw new Error(saveResult.message || 'Cowart refused to save the canvas snapshot.')
-        }
-        for (const imageShapeId of acknowledgedDeletesInSave) {
-          acknowledgedImageShapeDeletes.delete(imageShapeId)
         }
         hasUnsavedChanges = documentChangeVersion !== savingVersion
       } catch (error) {
@@ -6503,12 +6478,7 @@ export default function App() {
     }
 
     const unsubscribe = editor.store.listen(
-      ({ changes }) => {
-        for (const imageShapeId of collectRemovedImageShapeIds(changes)) {
-          acknowledgedImageShapeDeletes.add(imageShapeId)
-        }
-        scheduleSave()
-      },
+      scheduleSave,
       {
         source: 'user',
         scope: 'document'
@@ -6626,6 +6596,7 @@ export default function App() {
       disposeSlidesOperationHandler()
       syncViewState()
       saveCanvas()
+      canvasSaveSession.dispose()
     }
   }, [viewState])
 
