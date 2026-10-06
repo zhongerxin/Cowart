@@ -1,6 +1,6 @@
 {
   "name": "cowart",
-  "version": "0.1.36",
+  "version": "0.1.37",
   "description": "A native fullscreen tldraw canvas for images, HTML, Slides and AI motion films. Open the canvas with Cowart MCP and reuse it for generation and playback.",
   "author": {
     "name": "ZHONG XIN",

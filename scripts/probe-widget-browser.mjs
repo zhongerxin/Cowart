@@ -1,5 +1,5 @@
 // Optional real-browser regression for the generated standalone Widget.
-// Run: node scripts/probe-widget-browser.mjs [--project-dir=/absolute/project]
+// Run: node scripts/probe-widget-browser.mjs [--project-dir=/absolute/project] [--restored-startup]
 // Open the printed URL with an approved browser tool, then run the page cycle.
 // This is a test MCP Apps host, not Cowart's normal plugin launch flow.
 // All tool writes go to a disposable copy; source canvas data stays read-only.
@@ -24,6 +24,7 @@ const temporaryDir = await mkdtemp(join(tmpdir(), 'cowart-widget-browser-'))
 const projectDir = join(temporaryDir, 'project')
 const canvasDir = join(projectDir, 'canvas')
 const target = { projectDir, canvasDir }
+const restoredStartup = process.argv.includes('--restored-startup')
 // The HTML artifact receives its MCP Apps bridge when read as a resource.
 // Exercise that exact release resource, including the packaged SDK/bridge.
 const client = new Client({ name: 'cowart-browser-probe', version: '1.0.0' })
@@ -41,9 +42,16 @@ await cp(join(sourceProjectDir, 'canvas'), canvasDir, {
 })
 const canvasState = await readCowartCanvasState(target, { hydrateAssets: false })
 const payload = { ...target, view: 'canvas', preferredDisplayMode: 'fullscreen', canvasState }
+// Reproduce a fullscreen host restoring paths/revision with an incomplete
+// opener snapshot. The persisted fixture is still complete and authoritative.
+if (restoredStartup) {
+  const restoredPayload = { ...payload, canvasState: { ...canvasState, snapshot: null } }
+  widgetHtml = widgetHtml.replace('<head>', `<head><script>window.openai={toolOutput:${JSON.stringify(restoredPayload).replaceAll('<', '\\u003c')}};</script>`)
+}
 const metrics = {
   startedAt: new Date().toISOString(),
   sourceCanvasReadOnly: true,
+  restoredStartup,
   initialSnapshotBytes: Buffer.byteLength(JSON.stringify(canvasState.snapshot)),
   initialRecordCount: Object.keys(canvasState.snapshot?.store || {}).length,
   toolCounts: {},
@@ -93,6 +101,7 @@ async function toolResult(request) {
     default:
       throw new Error(`Browser probe does not implement tool ${name}`)
   }
+  if (result.ok === false && metrics.toolErrors.length < 30) metrics.toolErrors.push(result.message || 'Probe tool failed')
   return {
     ...(result.ok === false ? { isError: true } : {}),
     content: [{ type: 'text', text: result.ok === false ? (result.message || 'Probe tool failed') : 'Browser probe tool completed.' }],
@@ -114,7 +123,7 @@ async function readRequestJson(request) {
 const html = `<!doctype html><html lang="en"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>Cowart standalone Widget regression</title>
 <style>html,body{margin:0;height:100%;font:14px system-ui;background:#f3f4f6;color:#111827}body{display:grid;grid-template-rows:auto 1fr}header{display:flex;align-items:center;gap:14px;padding:9px 14px;border-bottom:1px solid #d1d5db}button{padding:6px 10px;cursor:pointer}#status{flex:1}iframe{width:100%;height:100%;border:0;background:white}details{position:fixed;right:10px;bottom:8px;z-index:10;max-width:600px;max-height:50vh;overflow:auto;background:#fffffff0;border:1px solid #d1d5db;padding:8px;border-radius:5px}pre{font:11px ui-monospace;white-space:pre-wrap}</style>
-<header><strong>Cowart real Widget regression</strong><button id="run">Run page switching regression</button><span id="status">Connecting to the generated Widget…</span></header>
+<header><strong>Cowart real Widget regression</strong><button id="run">Run page switching regression</button><button id="save">Save test holder</button><span id="status">Connecting to the generated Widget…</span></header>
 <iframe id="widget" title="Generated Cowart Widget" src="/widget"></iframe>
 <details><summary>Regression metrics</summary><pre id="metrics"></pre></details>
 <script>
@@ -137,6 +146,7 @@ async function json(url, options) {
 function recordError(message) { if (report.errors.length < 40) report.errors.push(String(message).slice(0, 800)); }
 let initialized = false;
 async function deliverInitialResult() {
+  if (${restoredStartup}) return;
   if (initialized) return;
   initialized = true;
   const payload = await json('/initial');
@@ -188,6 +198,8 @@ async function sample() {
     if (editor && !report.mounted) {
       report.mounted = true; mountedAt = Date.now();
       report.pages = editor.getPages().map((page) => ({id:page.id,name:page.name}));
+      const expectedIds = ${JSON.stringify(Object.values(canvasState.snapshot?.store || {}).filter((record) => record.typeName === 'page' || (record.typeName === 'shape' && record.type === 'image')).map((record) => record.id))};
+      report.startupPreserved = expectedIds.every((id) => Boolean(editor.store.get(id)));
       status.textContent = 'Widget mounted. Original canvas is read-only; all changes use a temporary copy.';
       if (new URLSearchParams(location.search).get('autostart') === '1') run();
     }
@@ -228,12 +240,27 @@ async function run() {
     status.textContent = 'Page switching complete. Observing 32 seconds of idle polling…';
     await pause(32000);
     report.completed = true;
-    report.passed = report.errors.length === 0 && Boolean(frame.contentWindow.__cowartEditor);
+    const persisted = await json('/results');
+    report.passed = report.errors.length === 0 && persisted.toolErrors.length === 0 &&
+      report.startupPreserved === true && Boolean(frame.contentWindow.__cowartEditor);
     status.textContent = report.passed ? 'PASS: Widget remained mounted through 3 page cycles and idle polling.' : 'FAIL: See regression metrics.';
   } catch(error) { recordError(error.message); report.completed=true; status.textContent='FAIL: '+error.message; }
   finally { report.running=false; button.disabled=false; await sample(); }
 }
 button.addEventListener('click',run);
+document.getElementById('save').addEventListener('click', async () => {
+  const editor = frame.contentWindow.__cowartEditor;
+  if (!editor) return;
+  editor.createShapes([{id:'shape:cowart-browser-startup-save',type:'frame',x:0,y:0,props:{w:320,h:180,name:'Startup save probe'}}]);
+  status.textContent = 'Saving a test holder into the disposable fixture…';
+  await pause(1600);
+  const saved = await json('/saved');
+  report.startupSavePassed = saved.preserved && saved.holderSaved;
+  status.textContent = report.startupSavePassed
+    ? 'PASS: Restored startup retained saved pages/images, and the test holder saved successfully.'
+    : 'FAIL: Startup lost saved content or the test holder could not save.';
+  await sample();
+});
 </script></html>`
 
 const server = createServer(async (request, response) => {
@@ -253,6 +280,15 @@ const server = createServer(async (request, response) => {
       return
     }
     if (request.method === 'GET' && url.pathname === '/initial') body = payload
+    else if (request.method === 'GET' && url.pathname === '/saved') {
+      const saved = await readCowartCanvasState(target, { hydrateAssets: false })
+      const expectedIds = Object.values(canvasState.snapshot?.store || {}).filter((record) =>
+        record.typeName === 'page' || (record.typeName === 'shape' && record.type === 'image')).map((record) => record.id)
+      body = {
+        preserved: expectedIds.every((id) => Boolean(saved.snapshot?.store[id])),
+        holderSaved: Boolean(saved.snapshot?.store['shape:cowart-browser-startup-save']),
+      }
+    }
     else if (request.method === 'POST' && url.pathname === '/tool') {
       try { body = await toolResult(await readRequestJson(request)) }
       catch (error) {

@@ -53,8 +53,20 @@ const clientBundle = await build({
 })
 const clientScript = new vm.Script(clientBundle.outputFiles[0].text)
 
+const savedSnapshot = {
+  schema: { schemaVersion: 2, sequences: {} },
+  store: {
+    'page:existing': { id: 'page:existing', typeName: 'page', name: 'Saved page', index: 'a1', meta: {} },
+    'shape:existing': { id: 'shape:existing', typeName: 'shape', type: 'frame', parentId: 'page:existing',
+      index: 'a1', x: 0, y: 0, rotation: 0, isLocked: false, opacity: 1, meta: {},
+      props: { w: 320, h: 180, name: 'Saved frame' } },
+  },
+}
+const savedCanvasState = { snapshot: savedSnapshot, revision: 'one',
+  viewState: { currentPageId: 'page:existing' }, storage: 'per-page' }
+
 function harness({ missingSdk = false, constructorError = false, toolError = false,
-  hostContext = { theme: 'light', displayMode: 'inline' }, grantedMode = 'fullscreen' } = {}) {
+  canvasState = savedCanvasState, hostContext = { theme: 'light', displayMode: 'inline' }, grantedMode = 'fullscreen' } = {}) {
   const window = new EventTarget()
   const calls = []
   const logs = []
@@ -93,7 +105,8 @@ function harness({ missingSdk = false, constructorError = false, toolError = fal
     async callServerTool(request) {
       calls.push(request)
       if (toolError) return { isError: true, content: [{ type: 'text', text: 'private tool failure' }] }
-      return { structuredContent: { snapshot: null, viewState: null, storage: 'empty' } }
+      return { structuredContent: request.name === 'get_cowart_canvas_state'
+        ? canvasState : { ok: true, revision: 'saved' } }
     }
   }
   const context = vm.createContext({
@@ -165,7 +178,7 @@ test('host readiness and unrelated globals before the project still load the can
   await h.advance(5000)
   const outcome = await result
   assert.equal(outcome.error, undefined)
-  assert.equal(outcome.value.storage, 'empty')
+  assert.equal(outcome.value.storage, 'per-page')
   assert.equal(h.calls.length, 1)
   assert.equal(h.calls[0].name, 'get_cowart_canvas_state')
   assert.equal(h.calls[0].arguments.projectDir, projectDir)
@@ -332,13 +345,98 @@ test('project conversations keep their original follow-up content without global
   h.assertClean()
 })
 
-test('first canvas load reuses the opener state without another server call', async () => {
+test('first canvas load reads authoritative state even when the opener supplies a document', async () => {
   const h = harness()
   await h.ready()
   h.result({ projectDir: '/startup-probe/project', canvasState: { snapshot: null, viewState: null, storage: 'empty' } })
   const result = await h.load()
-  assert.equal(result.storage, 'empty')
-  assert.equal(h.calls.length, 0)
+  assert.equal(result.storage, 'per-page')
+  assert.equal(result.snapshot, savedSnapshot)
+  assert.equal(h.calls.length, 1)
+  assert.equal(h.calls[0].arguments.ifRevision, undefined)
+  h.assertClean()
+})
+
+test('restored opener revisions ahead of storage cannot become the save baseline', async () => {
+  const h = harness()
+  await h.ready()
+  h.result({ projectDir: '/startup-probe/project', canvasState: {
+    snapshot: { schema: savedSnapshot.schema, store: {} }, revision: 'future-opener-revision', storage: 'per-page'
+  } })
+  const loaded = await h.load()
+  assert.equal(loaded.snapshot, savedSnapshot)
+  await h.context.cowartClient.saveCowartCanvasSnapshot(loaded.snapshot)
+  assert.equal(h.calls.length, 2)
+  assert.equal(h.calls[0].arguments.ifRevision, undefined)
+  assert.equal(h.calls[1].arguments.expectedRevision, savedCanvasState.revision)
+  h.assertClean()
+})
+
+test('an incomplete authoritative startup response never falls back to a valid opener', async () => {
+  for (const canvasState of [
+    { snapshot: savedSnapshot, storage: 'per-page' },
+    { revision: 'one', storage: 'per-page' },
+    { revision: 'one', snapshot: undefined, storage: 'per-page' },
+    { revision: 'one', snapshot: null, storage: 'per-page' },
+    { revision: 'one', snapshot: null, storage: 'empty', unchanged: true },
+    { revision: 'one', snapshot: { store: {} }, storage: 'per-page' },
+    { revision: 'one', snapshot: { schema: {} }, storage: 'per-page' },
+  ]) {
+    const h = harness({ canvasState })
+    await h.ready()
+    h.result({ projectDir: '/startup-probe/project', canvasState: savedCanvasState })
+    await assert.rejects(h.load(), /complete saved canvas state/)
+    await assert.rejects(h.context.cowartClient.saveCowartCanvasSnapshot(savedSnapshot), /no applied canvas revision/)
+    assert.equal(h.calls.length, 1)
+    assert.ok(h.stages().includes('canvas_load_failed'))
+    h.assertClean()
+  }
+  const h = harness({ canvasState: { snapshot: null, revision: 'empty-revision', storage: 'empty', viewState: null } })
+  await h.ready()
+  h.result({ projectDir: '/startup-probe/new-project', canvasState: savedCanvasState })
+  assert.equal((await h.load()).snapshot, null, 'An authoritative empty project remains a valid startup result')
+  h.assertClean()
+})
+
+test('a storage target changed during the startup read cannot publish a previous project baseline', async () => {
+  const h = harness()
+  await h.ready()
+  h.result({ projectDir: '/startup-probe/project' })
+  const app = h.context.__COWART_MCP_APP__
+  const originalCall = app.callServerTool.bind(app)
+  let complete
+  app.callServerTool = () => new Promise((resolve) => { complete = resolve })
+  const rejected = assert.rejects(h.load(), /target changed while loading/)
+  await flush()
+  h.result({ projectDir: '/startup-probe/other-project' })
+  complete({ structuredContent: savedCanvasState })
+  await rejected
+  await assert.rejects(h.context.cowartClient.saveCowartCanvasSnapshot(savedSnapshot), /no applied canvas revision/)
+  app.callServerTool = originalCall
+  await h.load()
+  assert.equal(h.calls.at(-1).arguments.projectDir, '/startup-probe/other-project')
+  h.assertClean()
+})
+
+test('an aborted startup read rejects a late response and allows the next mount to read afresh', async () => {
+  const h = harness()
+  await h.ready()
+  h.result({ projectDir: '/startup-probe/project' })
+  const app = h.context.__COWART_MCP_APP__
+  const originalCall = app.callServerTool.bind(app)
+  const controller = new AbortController()
+  let complete
+  app.callServerTool = () => new Promise((resolve) => { complete = resolve })
+  const rejected = assert.rejects(h.load(controller.signal), { name: 'AbortError' })
+  await flush()
+  controller.abort()
+  complete({ structuredContent: savedCanvasState })
+  await rejected
+  await assert.rejects(h.context.cowartClient.saveCowartCanvasSnapshot(savedSnapshot), /no applied canvas revision/)
+  app.callServerTool = originalCall
+  assert.equal((await h.load()).snapshot, savedSnapshot)
+  assert.equal(h.calls.length, 1)
+  assert.ok(!h.stages().includes('canvas_load_failed'))
   h.assertClean()
 })
 
@@ -374,10 +472,10 @@ test('server tool deadlines belong to the SDK rather than abandoned promise race
 })
 
 test('conditional refresh reuses one snapshot and advances its revision after a remote edit', async () => {
-  const h = harness()
+  const original = { schema: savedSnapshot.schema, store: { 'shape:one': { text: 'original' } } }
+  const edited = { schema: savedSnapshot.schema, store: { 'shape:one': { text: 'edited' } } }
+  const h = harness({ canvasState: { ...savedCanvasState, snapshot: original } })
   await h.ready()
-  const original = { store: { 'shape:one': { text: 'original' } } }
-  const edited = { store: { 'shape:one': { text: 'edited' } } }
   h.result({ projectDir: '/startup-probe/project', canvasState: { snapshot: original, revision: 'one' } })
   await h.load()
   const requests = []
@@ -430,7 +528,10 @@ test('project conversation JSON content wrappers preserve the target and initial
     assert.equal(state.storage, 'per-page')
     assert.equal(state.viewState.currentPageId, 'page:existing')
     assert.equal(h.window.openai.toolOutput.projectDir, payload.projectDir)
-    assert.equal(h.calls.length, 0)
+    assert.equal(h.calls.length, 1)
+    assert.equal(h.calls[0].arguments.projectDir, payload.projectDir)
+    assert.equal(h.calls[0].arguments.canvasDir, payload.canvasDir)
+    assert.equal(state.snapshot, savedSnapshot)
     assert.ok(!h.stages().includes('tool_result_missing_target'))
     h.assertClean()
   }
@@ -507,9 +608,9 @@ test('host placement is respected when already fullscreen or fullscreen is unava
 
 
 test('widget saves use the applied revision, not a dirty polling response, and expose CAS conflicts', async () => {
-  const h = harness()
-  await h.ready()
   const baseline = { schema: {}, store: {} }
+  const h = harness({ canvasState: { ...savedCanvasState, snapshot: baseline } })
+  await h.ready()
   const remote = { schema: {}, store: { remote: { id: 'remote' } } }
   h.result({ projectDir: '/startup-probe/project', canvasState: { snapshot: baseline, revision: 'one' } })
   await h.load()
@@ -535,9 +636,9 @@ test('widget saves use the applied revision, not a dirty polling response, and e
 })
 
 test('HTML delta acceptance never rolls back a revision applied while the tool was pending', async () => {
-  const h = harness()
-  await h.ready()
   const baseline = { schema: {}, store: { draft: { id: 'draft', meta: {} } } }
+  const h = harness({ canvasState: { ...savedCanvasState, snapshot: baseline } })
+  await h.ready()
   const remote = { schema: {}, store: { draft: { id: 'draft', meta: { changed: true } }, inserted: { id: 'inserted' } } }
   h.result({ projectDir: '/startup-probe/project', canvasState: { snapshot: baseline, revision: 'one' } })
   await h.load()

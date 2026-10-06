@@ -6137,6 +6137,9 @@ export default function App() {
       try {
         const canvasState = await loadCowartCanvasState(controller.signal)
         const sanitized = sanitizeCanvasSnapshotForTldraw(canvasState.snapshot)
+        if (canvasState.snapshot !== null && !sanitized.snapshot) {
+          throw new Error('Cowart could not load the saved canvas snapshot.')
+        }
         setSnapshot(sanitized.snapshot)
         setViewState(canvasState.viewState ?? null)
       } catch (error) {

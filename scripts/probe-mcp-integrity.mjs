@@ -84,6 +84,94 @@ try {
   assert.equal(opened.canvasState.revision, current.revision, 'The opener must supply the initial CAS baseline')
   console.log('OK: stale widget snapshots are refused, current snapshots save, and opener includes a revision.')
 
+  // A native sidebar can restore its previous tool result after the persisted
+  // canvas has changed. Its target is useful, but its initial document is not
+  // an authoritative read. In particular, an old empty document paired with a
+  // fresh revision would otherwise pass CAS and trigger image-loss protection.
+  const startupWindow = globalThis.window
+  let startupStore
+  try {
+    const imageAssetId = AssetRecordType.createId('sidebar-startup-image')
+    const imageShapeId = createShapeId('sidebar-startup-image')
+    const startupSnapshot = structuredClone(current.snapshot)
+    startupSnapshot.store[imageAssetId] = AssetRecordType.create({
+      id: imageAssetId, type: 'image', props: {
+        w: 16, h: 16, name: 'sidebar-startup.svg', isAnimated: false, mimeType: 'image/svg+xml',
+        src: `data:image/svg+xml;base64,${Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16"/></svg>').toString('base64')}`,
+      },
+    })
+    startupStore = new Store({ schema: createTLSchema() })
+    startupSnapshot.store[imageShapeId] = startupStore.schema.types.shape.create({
+      id: imageShapeId, type: 'image', parentId: pageId, index: 'a1',
+      props: { w: 16, h: 16, playing: false, url: '', assetId: imageAssetId, crop: null, flipX: false, flipY: false, altText: '' },
+    })
+    await call(first, 'save_cowart_canvas_state', { snapshot: startupSnapshot, expectedRevision: current.revision })
+    const startupState = await call(first, 'get_cowart_canvas_state')
+    const frontend = await import('../src/cowartClient.js')
+    const cachedStates = [
+      { snapshot: initialSnapshot, revision: stale.revision, storage: 'per-page' },
+      { snapshot: initialSnapshot, revision: startupState.revision, storage: 'per-page' },
+      { revision: startupState.revision, storage: 'per-page' },
+      { snapshot: null, revision: startupState.revision, storage: 'empty' },
+    ]
+    for (const canvasState of cachedStates) {
+      const requests = []
+      globalThis.window = {
+        openai: { toolOutput: { ...args, canvasState, globalWorkspace: true } },
+        cowartMcp: { async callServerTool(request) {
+          requests.push(structuredClone(request))
+          return first.callTool(request)
+        } },
+      }
+      const loaded = await frontend.loadCowartCanvasState()
+      assert.equal(requests.length, 1, 'Every mount must read the persisted canvas through the bridge')
+      assert.equal(requests[0].name, 'get_cowart_canvas_state')
+      assert.equal(requests[0].arguments.hydrateAssets, false)
+      assert.equal(requests[0].arguments.ifRevision, undefined, 'Startup requires a complete document, never a conditional empty reply')
+      assert.deepEqual(loaded.snapshot, startupState.snapshot, 'Restored opener documents cannot override the saved canvas')
+      assert.ok(loaded.snapshot.store[imageShapeId], 'Fresh sidebar initialization must retain saved images')
+      const savedStartup = await frontend.saveCowartCanvasSnapshot(() => loaded.snapshot, { protectImageRecords: true })
+      assert.equal(savedStartup.ok, true, 'The freshly loaded document must save without a false image-loss error')
+      assert.equal(requests.at(-1).arguments.expectedRevision, startupState.revision, 'The save baseline must come from the same fresh read as its document')
+    }
+
+    let startupReadCalls = 0
+    globalThis.window = {
+      openai: { toolOutput: { ...args, canvasState: { snapshot: null, revision: startupState.revision, storage: 'empty' } } },
+      cowartMcp: { async callServerTool(request) {
+        assert.equal(request.name, 'get_cowart_canvas_state')
+        startupReadCalls += 1
+        throw new Error('synthetic startup read failure')
+      } },
+    }
+    await assert.rejects(frontend.loadCowartCanvasState(), /synthetic startup read failure/)
+    assert.equal(startupReadCalls, 1, 'A failed authoritative read must not silently mount the cached empty document')
+    for (const incomplete of [
+      { revision: startupState.revision, storage: 'per-page' },
+      { revision: startupState.revision, snapshot: null, storage: 'per-page', unchanged: true },
+      { revision: startupState.revision, snapshot: null, storage: 'per-page' },
+      { revision: startupState.revision, snapshot: {}, storage: 'per-page' },
+    ]) {
+      let incompleteReadCalls = 0
+      globalThis.window = {
+        openai: { toolOutput: { ...args, canvasState: startupState } },
+        cowartMcp: { async callServerTool(request) {
+          assert.equal(request.name, 'get_cowart_canvas_state')
+          incompleteReadCalls += 1
+          return { structuredContent: incomplete }
+        } },
+      }
+      await assert.rejects(frontend.loadCowartCanvasState(), /complete saved canvas state/)
+      assert.equal(incompleteReadCalls, 1, 'Incomplete startup reads must fail instead of mounting an opener fallback')
+    }
+    assert.deepEqual((await call(first, 'get_cowart_canvas_state')).snapshot, startupState.snapshot)
+    console.log('OK: restored stale/missing sidebar documents load saved images and a matching fresh revision; failed startup reads cannot mount an empty fallback.')
+  } finally {
+    startupStore?.dispose()
+    if (startupWindow === undefined) delete globalThis.window
+    else globalThis.window = startupWindow
+  }
+
   // HTML DOM edits and full widget autosaves share a conditional write queue.
   // A queued save must capture the editor after the persisted HTML delta is
   // applied; unseen MCP changes must still invalidate both forms of write.

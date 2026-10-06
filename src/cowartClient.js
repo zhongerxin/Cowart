@@ -154,13 +154,22 @@ export async function loadCowartCanvasState(signal) {
       await waitForWidgetPayload(signal)
       if (signal?.aborted) throw abortError()
       const target = canvasTargetKey()
-      // The opener already read the initial state. Reuse it without a second
-      // tool call; later refreshes continue to read the persisted project.
-      const state = currentWidgetPayload().canvasState || await callCowartServerTool(
+      // Fullscreen hosts can restore an old opener result after restarting.
+      // Read the document and its revision together from storage before mounting;
+      // a restored/partial snapshot must never become the save or polling baseline.
+      const state = await callCowartServerTool(
         TOOL_GET_CANVAS_STATE,
         { hydrateAssets: false },
         { signal }
       )
+      if (canvasTargetKey() !== target) throw new Error('Cowart canvas target changed while loading.')
+      if (
+        !state?.revision || !Object.hasOwn(state, 'snapshot') || state.unchanged ||
+        (state.snapshot === null && state.storage !== 'empty') ||
+        (state.snapshot !== null && (!state.snapshot?.schema || !state.snapshot?.store))
+      ) {
+        throw new Error('Cowart could not load the complete saved canvas state.')
+      }
       cacheCanvasState(state, target)
       appliedCanvasState = cachedCanvasState
       reportCowartStartup('canvas_state_loaded')
