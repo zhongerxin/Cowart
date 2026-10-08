@@ -34,6 +34,60 @@ body {
   color: #4a5568;
 }
 
+.cowart-draggable-toolbar {
+  display: contents;
+}
+
+.cowart-canvas .tlui-layout__bottom,
+.cowart-draggable-toolbar .tlui-main-toolbar {
+  min-width: 0;
+}
+
+.cowart-draggable-toolbar .tlui-main-toolbar__inner {
+  z-index: var(--tl-layer-panels);
+  transform: translate(var(--cowart-toolbar-x, 0px), var(--cowart-toolbar-y, 0px));
+}
+
+.cowart-toolbar-drag-handle-container {
+  align-self: stretch;
+  flex: 0 0 28px;
+}
+
+.cowart-toolbar-drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 100%;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--tl-radius-4);
+  background: transparent;
+  color: var(--tl-color-text-3);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.cowart-toolbar-drag-handle:hover {
+  background: var(--tl-color-muted-2);
+  color: var(--tl-color-text);
+}
+
+.cowart-toolbar-drag-handle:focus-visible {
+  outline: 2px solid var(--tl-color-primary);
+  outline-offset: -3px;
+}
+
+.cowart-draggable-toolbar[data-dragging] .cowart-toolbar-drag-handle {
+  cursor: grabbing;
+}
+
+.tlui-main-toolbar__overflow-content .cowart-toolbar-drag-handle-container {
+  display: none;
+}
+
 .cowart-toolbar-divider {
   align-self: center;
   flex: 0 0 auto;

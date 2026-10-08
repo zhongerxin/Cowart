@@ -10,7 +10,6 @@ import {
   CloudToolbarItem,
   DefaultImageToolbar,
   DefaultImageToolbarContent,
-  DefaultToolbar,
   DefaultColorStyle,
   DefaultStylePanel,
   DefaultStylePanelContent,
@@ -66,6 +65,7 @@ import { attachCowartFilmController } from './filmPlayback.js'
 import { renderCowartFilmMp4 } from './filmExport.js'
 import { getFilmOptions, buildFilmGenerationPrompt } from './filmConfig.js'
 import { FilmStyleButtons } from './FilmStyleButtons.jsx'
+import { CowartDraggableToolbar } from './CowartDraggableToolbar.jsx'
 import { filmAnalyticsContext, withFilmExportAnalytics } from './filmAnalytics.js'
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Download, FileCode, Film, Image as ImageIcon, Pause, Play, Volume2, VolumeX, X } from 'lucide-react'
 import 'tldraw/tldraw.css'
@@ -5982,7 +5982,7 @@ function CowartToolbarDivider() {
 
 function CowartToolbar(props) {
   return (
-    <DefaultToolbar {...props} maxItems={12}>
+    <CowartDraggableToolbar {...props} maxItems={12}>
       <CowartAnnotationToolbarItem />
       <CowartToolbarDivider />
       <SelectToolbarItem />
@@ -6018,7 +6018,7 @@ function CowartToolbar(props) {
       <HighlightToolbarItem />
       <LaserToolbarItem />
       <FrameToolbarItem />
-    </DefaultToolbar>
+    </CowartDraggableToolbar>
   )
 }
 
