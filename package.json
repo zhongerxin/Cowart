@@ -18,7 +18,7 @@
     "probe:analytics": "node ./scripts/probe-analytics.mjs",
     "probe:ga4": "node ./scripts/probe-ga4.mjs",
     "probe:posthog": "node ./scripts/probe-posthog.mjs",
-    "quality": "npm run check:plugin && npm run check && npm run check:artifacts && npm run probe:mcp:cold && npm run probe:mcp && npm run probe:mcp:integrity && npm run probe:launcher && npm run probe:widget:startup && npm run probe:widget:sync && npm run probe:widget:memory && npm run probe:analytics && npm run probe:ga4 && npm run probe:posthog && npm run probe:html:capture && npm run probe:film && npm run probe:film:render",
+    "quality": "npm run check:plugin && npm run check && npm run check:artifacts && npm run probe:mcp:cold && npm run probe:mcp && npm run probe:mcp:integrity && npm run probe:launcher && npm run probe:widget:startup && npm run probe:widget:sync && npm run probe:widget:memory && npm run probe:analytics && npm run probe:ga4 && npm run probe:posthog && npm run probe:html:capture && npm run probe:film && npm run probe:film:render && npm run probe:video",
     "probe:widget:startup": "node ./scripts/probe-widget-startup.mjs",
     "probe:widget:sync": "node ./scripts/probe-widget-sync.mjs",
     "probe:launcher": "node ./scripts/probe-launcher.mjs",
@@ -29,7 +29,8 @@
     "probe:film:render": "node ./scripts/probe-film-render.mjs",
     "probe:mcp:integrity": "node ./scripts/probe-mcp-integrity.mjs",
     "probe:widget:memory": "node ./scripts/probe-widget-memory.mjs",
-    "probe:widget:browser": "node ./scripts/probe-widget-browser.mjs"
+    "probe:widget:browser": "node ./scripts/probe-widget-browser.mjs",
+    "probe:video": "node ./scripts/probe-video-import.mjs && node ./scripts/probe-video-storage.mjs && node ./scripts/probe-video-frame.mjs"
   },
   "devDependencies": {
     "@modelcontextprotocol/ext-apps": "^1.7.4",

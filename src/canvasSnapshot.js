@@ -29,7 +29,7 @@ function getRecordDependencies(record) {
   const dependencies = []
   if (record?.typeName === 'shape') {
     if (typeof record.parentId === 'string') dependencies.push(record.parentId)
-    if (record.type === 'image' && typeof record.props?.assetId === 'string') {
+    if (['image', 'video'].includes(record.type) && typeof record.props?.assetId === 'string') {
       dependencies.push(record.props.assetId)
     }
   }

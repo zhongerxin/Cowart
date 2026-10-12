@@ -45,6 +45,7 @@ import {
   TriangleToolbarItem,
   XBoxToolbarItem,
   createShapeId,
+  createShapesForAssets,
   DEFAULT_EMBED_DEFINITIONS,
   onDragFromToolbarToCreateShape,
   startEditingShapeWithRichText,
@@ -61,11 +62,13 @@ import { getAssetUrlsByImport } from '@tldraw/assets/imports.vite'
 import { AllSelection } from '@tiptap/pm/state'
 import { renderHtmlDraftDocument } from './htmlDraftCapture.js'
 import { cowartAssetCacheKey, cowartBlobFromBase64, createCowartAssetObjectUrlCache } from './cowartAssetCache.js'
+import { MAX_VIDEO_BYTES, normalizeVideoFile, probeVideoFile, validateMediaFileSize, insertMediaAssets } from './videoImport.js'
 import { attachCowartFilmController } from './filmPlayback.js'
 import { renderCowartFilmMp4 } from './filmExport.js'
 import { getFilmOptions, buildFilmGenerationPrompt } from './filmConfig.js'
 import { FilmStyleButtons } from './FilmStyleButtons.jsx'
 import { CowartDraggableToolbar } from './CowartDraggableToolbar.jsx'
+import { CowartVideoToolbar, CowartVideoFrameExtractionOverlay } from './CowartVideoFrameExtraction.jsx'
 import { filmAnalyticsContext, withFilmExportAnalytics } from './filmAnalytics.js'
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Download, FileCode, Film, Image as ImageIcon, Pause, Play, Volume2, VolumeX, X } from 'lucide-react'
 import 'tldraw/tldraw.css'
@@ -334,7 +337,10 @@ const cowartPendingSlidesPastes = new WeakMap()
 const cowartCopiedContent = new WeakMap()
 
 const cowartTldrawAssetStore = {
-  upload: async (_asset, file) => ({ src: await readFileAsDataUrl(file) }),
+  upload: async (_asset, file) => {
+    validateMediaFileSize(file)
+    return { src: await readFileAsDataUrl(file) }
+  },
   resolve: resolveCowartTldrawAssetUrl
 }
 
@@ -3335,6 +3341,7 @@ const cowartUiOverrides = {
     const defaultCopyAsPng = actions['copy-as-png']
     return {
       ...actions,
+      'insert-media': { ...actions['insert-media'], onSelect: (source) => openCowartMediaImport(editor, source) },
       'copy-as-png': {
         ...defaultCopyAsPng,
         async onSelect(source) {
@@ -3425,6 +3432,8 @@ const cowartUiOverrides = {
       'tool.ai-draft': AI_DRAFT_HOLDER_LABEL,
       'tool.ai-film': AI_FILM_LABEL,
       'tool.ai-slides': AI_SLIDES_LABEL,
+      'tool.cowart-media': '导入媒体',
+      'action.insert-media': '导入媒体',
       'tool.cowart-annotation': ANNOTATION_TOOL_LABEL
     },
     'zh-cn': {
@@ -3432,12 +3441,15 @@ const cowartUiOverrides = {
       'tool.ai-draft': AI_DRAFT_HOLDER_LABEL,
       'tool.ai-film': AI_FILM_LABEL,
       'tool.ai-slides': AI_SLIDES_LABEL,
+      'tool.cowart-media': '导入媒体',
+      'action.insert-media': '导入媒体',
       'tool.cowart-annotation': ANNOTATION_TOOL_LABEL
     }
   },
   tools(editor, tools) {
     return {
       ...tools,
+      asset: { ...tools.asset, label: 'tool.cowart-media', onSelect: (source) => openCowartMediaImport(editor, source) },
       arrow: {
         ...tools.arrow,
         kbd: undefined
@@ -3551,6 +3563,7 @@ const cowartUiOverrides = {
 const cowartComponents = {
   Toolbar: CowartToolbar,
   ImageToolbar: CowartSelectionToolbar,
+  VideoToolbar: CowartVideoSelectionToolbar,
   InFrontOfTheCanvas: CowartCanvasOverlay,
   StylePanel: CowartStylePanel
 }
@@ -3562,6 +3575,8 @@ function CowartCanvasOverlay() {
       <CowartAiDraftGenerationPanel />
       <CowartAiSlidesGenerationPanel />
       <CowartSlidesPresentationOverlay />
+      <CowartVideoFrameExtractionOverlay />
+      <CowartMediaImport />
     </>
   )
 }
@@ -5124,6 +5139,17 @@ function CowartAspectLockIcon({ locked }) {
   )
 }
 
+function CowartVideoSelectionToolbar() {
+  const editor = useEditor()
+  const videoShapeId = useValue('cowart selected video toolbar shape id', () => {
+    const shape = editor.getOnlySelectedShape()
+    return shape?.type === 'video' ? shape.id : null
+  }, [editor])
+  if (!videoShapeId) return null
+  return <CowartVideoToolbar videoShapeId={videoShapeId}
+    renderAltTextEditor={({ onClose, shapeId }) => <CowartAltTextEditor onClose={onClose} shapeId={shapeId} />} />
+}
+
 function CowartSelectionToolbar() {
   const editor = useEditor()
   const slidesShapeId = useValue(
@@ -5980,6 +6006,61 @@ function CowartToolbarDivider() {
   return <div aria-orientation="vertical" className="cowart-toolbar-divider" role="separator" />
 }
 
+function openCowartMediaImport(editor, source) {
+  if (editor.getIsReadonly()) return
+  editor.getContainerDocument().defaultView.dispatchEvent(new CustomEvent('cowart:import-media', { detail: { source } }))
+}
+
+function CowartMediaImport() {
+  const editor = useEditor()
+  const { addToast, removeToast } = useToasts()
+  const trackEvent = useUiEvents()
+  const inputRef = useRef(null)
+  const busyRef = useRef(false)
+
+  useEffect(() => {
+    const win = editor.getContainerDocument().defaultView
+    const open = (event) => {
+      if (busyRef.current || editor.getIsReadonly()) return
+      trackEvent('insert-media', { source: event.detail?.source || 'toolbar' })
+      inputRef.current?.click()
+    }
+    win.addEventListener('cowart:import-media', open)
+    return () => win.removeEventListener('cowart:import-media', open)
+  }, [editor, trackEvent])
+
+  async function importMedia(event) {
+    const selected = Array.from(event.target.files || [])
+    event.target.value = ''
+    if (!selected.length || busyRef.current) return
+    busyRef.current = true
+    const notice = addToast({ title: '正在导入媒体…', severity: 'info', keepOpen: true })
+    try {
+      const files = []
+      for (const selectedFile of selected) {
+        const isVideo = selectedFile.type.startsWith('video/') || (!selectedFile.type && /\.(mp4|webm|mov)$/i.test(selectedFile.name))
+        const file = isVideo ? normalizeVideoFile(selectedFile) : selectedFile
+        if (isVideo) await probeVideoFile(file, { document: editor.getContainerDocument() })
+        else {
+          if (!file.type.startsWith('image/')) throw new Error('请选择图片或视频文件。')
+          if (!file.size) throw new Error('图片文件为空，请重新选择。')
+          validateMediaFileSize(file)
+        }
+        files.push(file)
+      }
+      await insertMediaAssets(editor, files, createShapesForAssets)
+      addToast({ title: '媒体已导入', description: files.some((file) => file.type.startsWith('video/')) ? '双击视频即可播放、暂停或拖动进度。' : undefined, severity: 'success' })
+    } catch (error) {
+      addToast({ title: '媒体导入失败', description: error instanceof Error ? error.message : '请换一个文件重试。', severity: 'error' })
+    } finally {
+      removeToast(notice)
+      busyRef.current = false
+    }
+  }
+
+  return <input ref={inputRef} type="file" accept="image/*,video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov" multiple hidden onChange={importMedia} />
+}
+
 function CowartToolbar(props) {
   return (
     <CowartDraggableToolbar {...props} maxItems={12}>
@@ -6625,6 +6706,7 @@ export default function App() {
         snapshot={snapshot ?? undefined}
         assetUrls={cowartAssetUrls}
         assets={cowartTldrawAssetStore}
+        maxAssetSize={MAX_VIDEO_BYTES}
         inferDarkMode
         onMount={handleMount}
         options={cowartTldrawOptions}

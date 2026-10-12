@@ -1407,3 +1407,31 @@ body {
   .cowart-film-progress { width: 60px; }
   .cowart-film-playback { gap: 3px; }
 }
+
+.cowart-video-frame-dialog {
+  box-sizing: border-box;
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  padding: 20px;
+  color: #1f2430;
+  background: rgb(255 255 255 / 96%);
+  border: 1px solid #d5dbe5;
+  border-radius: 18px;
+  box-shadow: 0 30px 74px rgb(15 23 42 / 10%), 0 10px 30px rgb(15 23 42 / 8%);
+  pointer-events: auto;
+  font: inherit;
+}
+.cowart-video-frame-dialog::backdrop { background: rgb(15 23 42 / 24%); }
+.cowart-video-frame-dialog h2 { margin: 0 0 16px; font-size: 18px; font-weight: 600; }
+.cowart-video-frame-preview { display: block; width: 100%; max-height: min(45vh, 320px); object-fit: contain; background: #11151c; border-radius: 10px; }
+.cowart-video-frame-timeline { display: grid; gap: 12px; margin-top: 18px; font-size: 13px; }
+.cowart-video-frame-timeline input { width: 100%; margin: 0; accent-color: #1f2430; }
+.cowart-video-frame-time { display: flex; justify-content: space-between; margin-top: 6px; color: #6b7280; font-size: 12px; font-variant-numeric: tabular-nums; }
+.cowart-video-frame-status { min-height: 18px; margin: 14px 0; font-size: 12px; color: #6b7280; }
+.cowart-video-frame-status[role="alert"] { color: #bc3030; }
+.cowart-video-frame-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.cowart-video-frame-actions button { border: 1px solid #d5dbe5; border-radius: 8px; padding: 9px 14px; color: #1f2430; background: white; font: inherit; font-size: 13px; cursor: pointer; }
+.cowart-video-frame-actions button.cowart-video-frame-confirm { color: white; background: #1f2430; border-color: #1f2430; }
+.cowart-video-frame-actions button:disabled { opacity: .45; cursor: default; }
+.cowart-video-frame-dialog :focus-visible { outline: 2px solid #64748b; outline-offset: 3px; }

@@ -20,6 +20,9 @@ const canvasFileName = 'cowart-canvas.json'
 const pageIdPrefix = 'page:'
 const globalAssetsRoute = '/assets/'
 const pageAssetsRoute = '/page-assets/'
+// Imported videos are encoded as base64 in canvas JSON before localization.
+// Allow a 50 MiB video plus the existing canvas while keeping requests bounded.
+const maxCanvasRequestBytes = 256 * 1024 * 1024
 const canvasEventClients = new Set()
 let canvasEventVersion = 0
 let canvasSnapshotSanitizerPromise = null
@@ -33,6 +36,9 @@ const mimeTypes = new Map([
   ['.png', 'image/png'],
   ['.svg', 'image/svg+xml'],
   ['.webp', 'image/webp'],
+  ['.mp4', 'video/mp4'],
+  ['.webm', 'video/webm'],
+  ['.mov', 'video/quicktime'],
   ['.htm', 'text/html; charset=utf-8'],
   ['.html', 'text/html; charset=utf-8']
 ])
@@ -74,13 +80,16 @@ function broadcastCanvasChanged(result) {
 function readRequestBody(req) {
   return new Promise((resolveBody, rejectBody) => {
     let body = ''
+    let receivedBytes = 0
     req.setEncoding('utf8')
     req.on('data', (chunk) => {
-      body += chunk
-      if (body.length > 50 * 1024 * 1024) {
+      receivedBytes += Buffer.byteLength(chunk, 'utf8')
+      if (receivedBytes > maxCanvasRequestBytes) {
         rejectBody(new Error('Canvas payload is too large.'))
         req.destroy()
+        return
       }
+      body += chunk
     })
     req.on('end', () => resolveBody(body))
     req.on('error', rejectBody)
@@ -230,6 +239,12 @@ function extensionFromMimeType(mimeType) {
       return '.svg'
     case 'image/webp':
       return '.webp'
+    case 'video/mp4':
+      return '.mp4'
+    case 'video/webm':
+      return '.webm'
+    case 'video/quicktime':
+      return '.mov'
     case 'text/html':
       return '.html'
     default:

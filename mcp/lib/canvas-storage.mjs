@@ -106,6 +106,9 @@ const mimeTypes = new Map([
   [".png", "image/png"],
   [".svg", "image/svg+xml"],
   [".webp", "image/webp"],
+  [".mp4", "video/mp4"],
+  [".webm", "video/webm"],
+  [".mov", "video/quicktime"],
   [".htm", "text/html"],
   [".html", "text/html"],
 ]);
@@ -312,6 +315,12 @@ function extensionFromMimeType(mimeType) {
       return ".svg";
     case "image/webp":
       return ".webp";
+    case "video/mp4":
+      return ".mp4";
+    case "video/webm":
+      return ".webm";
+    case "video/quicktime":
+      return ".mov";
     case "text/html":
       return ".html";
     default:
@@ -641,7 +650,7 @@ async function hydrateSnapshotAssets(args, snapshot) {
   const hydratedAssets = [];
 
   for (const record of Object.values(hydrated.store)) {
-    if (record?.typeName !== "asset" || record.type !== "image") continue;
+    if (record?.typeName !== "asset" || !["image", "video"].includes(record.type)) continue;
     const src = record.props?.src;
     if (typeof src !== "string" || src.startsWith("data:") || /^https?:\/\//.test(src)) continue;
 
@@ -759,8 +768,8 @@ export async function readCowartPageAsset(args = {}, options = {}) {
   if (!fileStat.isFile()) throw new Error(`Cowart asset is not a file: ${assetUrl}`);
 
   const mimeType = mimeTypes.get(extname(filePath).toLowerCase()) || "application/octet-stream";
-  if (!mimeType.startsWith("image/") && mimeType !== "text/html") {
-    throw new Error(`Cowart page assets only expose image or HTML payloads. Received ${mimeType}.`);
+  if (!mimeType.startsWith("image/") && !["video/mp4", "video/webm", "video/quicktime", "text/html"].includes(mimeType)) {
+    throw new Error(`Cowart page assets only expose image, supported video or HTML payloads. Received ${mimeType}.`);
   }
 
   const buffer = await readFile(filePath);
